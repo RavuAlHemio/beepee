@@ -1,0 +1,458 @@
+mod config;
+mod database;
+mod model;
+
+
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::error::Error;
+use std::ffi::OsString;
+use std::fmt;
+use std::fs::File;
+use std::io::{self, Read};
+use std::net::{AddrParseError, SocketAddr};
+use std::path::PathBuf;
+use std::result::Result;
+
+use chrono::{DateTime, FixedOffset, Local};
+use env_logger;
+use form_urlencoded;
+use http::request::Parts;
+use hyper::{Body, Method, Request, Response, Server};
+use hyper::body;
+use hyper::service::{make_service_fn, service_fn};
+use log::error;
+use once_cell::sync::{Lazy, OnceCell};
+use regex::Regex;
+use tera::{Context, Tera};
+use tokio::sync::RwLock;
+use toml;
+
+use crate::config::{CONFIG, CONFIG_PATH, load_config};
+use crate::database::{add_measurement, get_recent_measurements};
+use crate::model::Measurement;
+
+
+static TERA: OnceCell<RwLock<Tera>> = OnceCell::new();
+static STATIC_PATH_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^/static/([a-z0-9-._]+)$").unwrap());
+
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct MissingValueError(String);
+impl fmt::Display for MissingValueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "missing value for key {}", self.0)
+    }
+}
+impl Error for MissingValueError {
+}
+
+
+#[derive(Debug)]
+pub(crate) enum ServerError {
+    OpeningConfigFile(std::io::Error),
+    ReadingConfigFile(std::io::Error),
+    ParsingConfigFile(toml::de::Error),
+    ParsingListenAddress(AddrParseError),
+    HyperError(hyper::Error),
+    TemplatingSetup(tera::Error),
+}
+impl fmt::Display for ServerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ServerError::OpeningConfigFile(e)
+                => write!(f, "error opening config file: {}", e),
+            ServerError::ReadingConfigFile(e)
+                => write!(f, "error reading config file: {}", e),
+            ServerError::ParsingConfigFile(e)
+                => write!(f, "error parsing config file: {}", e),
+            ServerError::ParsingListenAddress(e)
+                => write!(f, "error parsing listen address: {}", e),
+            ServerError::HyperError(e)
+                => write!(f, "hyper error: {}", e),
+            ServerError::TemplatingSetup(e)
+                => write!(f, "error setting up templating: {}", e),
+        }
+    }
+}
+impl Error for ServerError {
+}
+
+
+#[derive(Debug)]
+pub(crate) enum ClientError {
+    MissingValue(String),
+    FailedToParseIntValue(String, String, std::num::ParseIntError),
+}
+impl fmt::Display for ClientError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ClientError::MissingValue(key)
+                => write!(f, "missing value for key: {}", key),
+            ClientError::FailedToParseIntValue(key, value, err)
+                => write!(f, "failed to parse value {:?} for key {:?}: {}", value, key, err),
+        }
+    }
+}
+impl Error for ClientError {
+}
+
+
+async fn render_template(template_name: &str, context: &Context) -> Result<Body, tera::Error> {
+    let template_string = {
+        TERA.get()
+            .expect("template engine is set")
+            .read()
+            .await
+            .render(template_name, context)?
+    };
+    let body = Body::from(template_string);
+    Ok(body)
+}
+
+async fn respond_template(
+    template_name: &str,
+    context: &Context,
+    status: u16,
+    headers: &HashMap<String, String>,
+) -> Result<Response<Body>, Infallible> {
+    let body = match render_template(template_name, context).await {
+        Ok(b) => b,
+        Err(e) => {
+            error!("failed to render template: {}", e);
+            return respond_500();
+        },
+    };
+
+    let mut response_builder = Response::builder()
+        .status(status)
+        .header("Content-Type", "text/html; charset=utf-8");
+
+    for (key, value) in headers {
+        response_builder = response_builder.header(key, value);
+    }
+
+    let response = match response_builder.body(body) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("failed to create response: {}", e);
+            return respond_500();
+        }
+    };
+    Ok(response)
+}
+
+fn respond_500() -> Result<Response<Body>, Infallible> {
+    let body = Body::from(String::from(
+        r#"<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Internal Server Error</title>
+</head>
+<body>
+<h1>Internal Server Error</h1>
+<p>Something went wrong. It's not your fault. Tell the people responsible to check the logs.</p>
+</body>
+</html>"#
+    ));
+
+    // can't do much except unwrap/expect here, as this *is* the error handler
+    let response = Response::builder()
+        .header("Content-Type", "text/html; charset=utf-8")
+        .body(body)
+        .expect("failed to create response");
+    Ok(response)
+}
+
+async fn respond_400(err: ClientError) -> Result<Response<Body>, Infallible> {
+    let mut context = Context::new();
+    context.insert("error", &err.to_string());
+
+    respond_template(
+        "400.html.tera",
+        &context,
+        400,
+        &HashMap::new(),
+    ).await
+}
+
+async fn respond_403() -> Result<Response<Body>, Infallible> {
+    respond_template(
+        "403.html.tera",
+        &Context::new(),
+        403,
+        &HashMap::new(),
+    ).await
+}
+
+async fn respond_404() -> Result<Response<Body>, Infallible> {
+    respond_template(
+        "404.html.tera",
+        &Context::new(),
+        404,
+        &HashMap::new(),
+    ).await
+}
+
+async fn respond_405(allowed_methods: &[Method]) -> Result<Response<Body>, Infallible> {
+    let methods: Vec<String> = allowed_methods.iter()
+        .map(|m| m.to_string())
+        .collect();
+    let joined_methods = methods.join(", ");
+
+    let mut context = Context::new();
+    context.insert("allowed_methods", &methods);
+
+    let mut headers = HashMap::new();
+    headers.insert(String::from("Allow"), joined_methods);
+
+    respond_template(
+        "405.html.tera",
+        &context,
+        405,
+        &headers,
+    ).await
+}
+
+async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
+    let uri_string = parts.uri.to_string();
+
+    let mut context = Context::new();
+    context.insert("url", &uri_string);
+
+    let mut headers = HashMap::new();
+    headers.insert(String::from("Location"), uri_string);
+
+    respond_template(
+        "redirect.html.tera",
+        &context,
+        302,
+        &headers,
+    ).await
+}
+
+async fn get_index() -> Result<Response<Body>, Infallible> {
+    let recent_measurements = match get_recent_measurements(10).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+
+    let mut context = Context::new();
+    context.insert("last_measurements", &recent_measurements);
+
+    respond_template(
+        "list.html.tera",
+        &context,
+        200,
+        &HashMap::new(),
+    ).await
+}
+
+fn get_form_i32(req_kv: &HashMap<String, String>, key: &str) -> Result<i32, ClientError> {
+    let string_value = req_kv.get(key)
+        .ok_or(ClientError::MissingValue(String::from(key)))?;
+    let i32_value: i32 = string_value.parse()
+        .map_err(|e| ClientError::FailedToParseIntValue(String::from(key), string_value.clone(), e))?;
+    Ok(i32_value)
+}
+
+fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<Measurement, ClientError> {
+    let systolic: i32 = get_form_i32(&req_kv, "systolic")?;
+    let diastolic: i32 = get_form_i32(&req_kv, "diastolic")?;
+    let pulse: i32 = get_form_i32(&req_kv, "pulse")?;
+
+    let local_now = Local::now();
+    let fixed_now: DateTime<FixedOffset> = local_now.with_timezone(local_now.offset());
+
+    let measurement = Measurement::new(
+        -1,
+        fixed_now,
+        systolic,
+        diastolic,
+        pulse,
+    );
+    Ok(measurement)
+}
+
+async fn post_index(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    let (req_parts, req_body) = req.into_parts();
+    let req_body_bytes = match body::to_bytes(req_body).await {
+        Ok(rbb) => rbb,
+        Err(e) => {
+            error!("error reading request bytes: {}", e);
+            return respond_500();
+        },
+    }.to_vec();
+    let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+
+    let mut new_measurement = match get_measurement_from_form(&req_kv) {
+        Ok(nm) => nm,
+        Err(e) => {
+            return respond_400(e).await;
+        },
+    };
+
+    match add_measurement(&mut new_measurement).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error adding measurement: {}", e);
+            return respond_500();
+        },
+    };
+
+    redirect_to_self(req_parts).await
+}
+
+async fn respond_static_file(file_name: &str) -> Result<Response<Body>, Infallible> {
+    let mime_type = if file_name.ends_with(".css") {
+        "text/css"
+    } else if file_name.ends_with(".js") {
+        "text/javascript"
+    } else if file_name.ends_with(".jpg") || file_name.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if file_name.ends_with(".png") {
+        "image/png"
+    } else if file_name.ends_with(".txt") {
+        "text/plain; charset=utf-8"
+    } else {
+        "application/octet-stream"
+    };
+
+    let file_path: PathBuf = ["static", file_name].iter().collect();
+    let mut file = match File::open(&file_path) {
+        Ok(f) => f,
+        Err(e) => {
+            if e.kind() == io::ErrorKind::NotFound {
+                return respond_404().await;
+            } else {
+                error!("error opening file {:?}: {}", file_path, e);
+                return respond_500();
+            }
+        },
+    };
+    let mut buf = Vec::new();
+    if let Err(e) = file.read_to_end(&mut buf) {
+        error!("error reading file {:?}: {}", file_path, e);
+        return respond_500();
+    }
+
+    let response_res = Response::builder()
+        .header("Content-Length", format!("{}", buf.len()))
+        .header("Content-Type", mime_type)
+        .body(Body::from(buf));
+    match response_res {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            error!("failed to create response: {}", e);
+            return respond_500();
+        }
+    }
+}
+
+async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    if let Some(cap) = STATIC_PATH_RE.captures(req.uri().path()) {
+        let static_file_name = cap.get(1).expect("filename captured");
+        return respond_static_file(static_file_name.as_str()).await;
+    }
+
+    // endpoints that do not require authentication before this line
+
+    // check for token
+    let query_str = match req.uri().query() {
+        None => return respond_403().await,
+        Some(q) => q,
+    };
+    let query_kv: HashMap<String, String> = form_urlencoded::parse(query_str.as_bytes())
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let token_value = match query_kv.get("token") {
+        None => return respond_403().await,
+        Some(tv) => tv,
+    };
+
+    let token_matches = {
+        CONFIG
+            .get().expect("config is set")
+            .read().await
+            .auth_tokens
+            .iter()
+            .any(|t| t == token_value)
+    };
+    if !token_matches {
+        return respond_403().await;
+    }
+
+    // authenticated-only endpoints beyond this line
+
+    if req.uri().path() == "/" {
+        if req.method() == Method::GET {
+            get_index().await
+        } else if req.method() == Method::POST {
+            post_index(req).await
+        } else {
+            respond_405(&[Method::GET, Method::POST]).await
+        }
+    } else {
+        respond_404().await
+    }
+}
+
+async fn run() -> Result<(), ServerError> {
+    env_logger::init();
+
+    let args: Vec<OsString> = std::env::args_os().collect();
+    let config_path = match args.get(1) {
+        Some(cp) => PathBuf::from(cp),
+        None => PathBuf::from("config.toml"),
+    };
+    CONFIG_PATH
+        .set(config_path).expect("failed to set config path");
+
+    load_config().await?;
+
+    let tera = Tera::new("templates/**/*")
+        .map_err(|e| ServerError::TemplatingSetup(e))?;
+    TERA
+        .set(RwLock::new(tera)).expect("failed to set templating engine");
+
+    let addr: SocketAddr = {
+        CONFIG
+            .get().expect("no config lock")
+            .read().await
+            .http_listen
+            .parse()
+            .map_err(|e| ServerError::ParsingListenAddress(e))?
+    };
+
+    let make_service = make_service_fn(|_conn| async {
+        Ok::<_, Infallible>(service_fn(handle_request))
+    });
+
+    let server = Server::bind(&addr).serve(make_service);
+    server.await
+        .map_err(|e| ServerError::HyperError(e))
+}
+
+fn main() {
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async move {
+            run().await
+        });
+
+    std::process::exit(match result {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("{}", e);
+            1
+        },
+    });
+}

@@ -1,0 +1,35 @@
+{% extends "base.html.tera" %}
+
+{% block title %}Blood Pressure{% endblock %}
+
+{% block content %}
+    <h1>Blood Pressure</h1>
+
+    <form class="input-form" method="post">
+        <div><input type="number" name="systolic" class="systolic" placeholder="systolic mmHg" /></div>
+        <div><input type="number" name="diastolic" class="diastolic" placeholder="diastolic mmHg" /></div>
+        <div><input type="number" name="pulse" class="pulse" placeholder="pulse min&#8315;&#185;" /></div>
+        <div><button type="submit">store</button></div>
+    </form>
+
+    <table class="last-measurements">
+        <thead>
+            <tr>
+                <th class="timestamp">timestamp</th>
+                <th class="systolic">systolic mmHg</th>
+                <th class="diastolic">diastolic mmHg</th>
+                <th class="pulse">pulse min&#8315;&#185;</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for measurement in last_measurements %}
+                <tr>
+                    <td class="timestamp">{{ measurement.timestamp }}</td>
+                    <td class="systolic">{{ measurement.systolic }}</td>
+                    <td class="diastolic">{{ measurement.diastolic }}</td>
+                    <td class="pulse">{{ measurement.pulse }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

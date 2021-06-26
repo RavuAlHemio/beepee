@@ -1,0 +1,9 @@
+{% extends "base.html.tera" %}
+
+{% block title %}Forbidden{% endblock %}
+
+{% block content %}
+    <h1>Forbidden</h1>
+
+    <p>You're missing the token!</p>
+{% endblock %}

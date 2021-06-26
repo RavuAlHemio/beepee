@@ -1,0 +1,19 @@
+[package]
+name = "beepee"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+chrono = { version = "0.4" }
+env_logger = { version = "0.8" }
+form_urlencoded = { version = "1.0" }
+http = { version = "0.2" }
+hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
+log = { version = "0.4" }
+once_cell = { version = "1.8" }
+regex = { version = "1.5" }
+serde = { version = "1", features = ["derive"] }
+tera = { version = "1.11" }
+tokio = { version = "1.7", features = ["macros", "rt-multi-thread"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
+toml = { version = "0.5" }

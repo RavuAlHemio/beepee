@@ -1,0 +1,26 @@
+body
+{
+    font-family: sans-serif;
+}
+
+table, th, td
+{
+    border: 1px solid #ccc;
+}
+
+th, td
+{
+    padding: 0.2em 0.4em;
+    vertical-align: top;
+}
+
+th
+{
+    background-color: #603;
+    color: #fff;
+}
+
+td.systolic, td.diastolic, td.pulse
+{
+    text-align: right;
+}
