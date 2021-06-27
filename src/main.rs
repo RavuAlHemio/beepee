@@ -84,6 +84,8 @@ impl Error for ServerError {
 pub(crate) enum ClientError {
     MissingValue(String),
     FailedToParseIntValue(String, String, std::num::ParseIntError),
+    ValueZeroOrLess(String, i32),
+    ValueTooHigh(String, i32, i32),
 }
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -92,6 +94,10 @@ impl fmt::Display for ClientError {
                 => write!(f, "missing value for key: {}", key),
             ClientError::FailedToParseIntValue(key, value, err)
                 => write!(f, "failed to parse value {:?} for key {:?}: {}", value, key, err),
+            ClientError::ValueZeroOrLess(key, value)
+                => write!(f, "value {} for key {:?} is zero or less", value, key),
+            ClientError::ValueTooHigh(key, value, max)
+                => write!(f, "value {} for key {:?} is too high (> {})", value, key, max),
         }
     }
 }
@@ -276,18 +282,32 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-fn get_form_i32(req_kv: &HashMap<String, String>, key: &str) -> Result<i32, ClientError> {
-    let string_value = req_kv.get(key)
-        .ok_or(ClientError::MissingValue(String::from(key)))?;
+fn get_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<i32>, ClientError> {
+    let string_value = match req_kv.get(key) {
+        Some(sv) => sv,
+        None => return Ok(None),
+    };
     let i32_value: i32 = string_value.parse()
         .map_err(|e| ClientError::FailedToParseIntValue(String::from(key), string_value.clone(), e))?;
-    Ok(i32_value)
+    if i32_value < 0 {
+        Err(ClientError::ValueZeroOrLess(String::from(key), i32_value))
+    } else {
+        Ok(Some(i32_value))
+    }
+}
+
+fn get_req_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<i32, ClientError> {
+    match get_form_i32_gt0(req_kv, key) {
+        Ok(Some(i)) => Ok(i),
+        Ok(None) => Err(ClientError::MissingValue(String::from(key))),
+        Err(e) => Err(e),
+    }
 }
 
 fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<Measurement, ClientError> {
-    let systolic: i32 = get_form_i32(&req_kv, "systolic")?;
-    let diastolic: i32 = get_form_i32(&req_kv, "diastolic")?;
-    let pulse: i32 = get_form_i32(&req_kv, "pulse")?;
+    let systolic: i32 = get_req_form_i32_gt0(&req_kv, "systolic")?;
+    let diastolic: i32 = get_req_form_i32_gt0(&req_kv, "diastolic")?;
+    let pulse: i32 = get_req_form_i32_gt0(&req_kv, "pulse")?;
 
     let local_now = Local::now();
     let fixed_now: DateTime<FixedOffset> = local_now.with_timezone(local_now.offset());
