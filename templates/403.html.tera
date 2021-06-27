@@ -5,5 +5,5 @@
 {% block content %}
     <h1>Forbidden</h1>
 
-    <p>You're missing the token!</p>
+    <p>The token is missing or incorrect!</p>
 {% endblock %}
