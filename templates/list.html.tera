@@ -6,9 +6,9 @@
     <h1>Blood Pressure</h1>
 
     <form class="input-form" method="post">
-        <div><input type="number" name="systolic" class="systolic" placeholder="systolic mmHg" /></div>
-        <div><input type="number" name="diastolic" class="diastolic" placeholder="diastolic mmHg" /></div>
-        <div><input type="number" name="pulse" class="pulse" placeholder="pulse min&#8315;&#185;" /></div>
+        <div><input type="number" name="systolic" class="systolic" placeholder="systolic mmHg" required="required" /></div>
+        <div><input type="number" name="diastolic" class="diastolic" placeholder="diastolic mmHg" required="required" /></div>
+        <div><input type="number" name="pulse" class="pulse" placeholder="pulse min&#8315;&#185;" required="required" /></div>
         <div><button type="submit">store</button></div>
     </form>
 
