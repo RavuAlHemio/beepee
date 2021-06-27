@@ -19,6 +19,7 @@ pub(crate) struct Config {
     pub db_conn_string: String,
     pub http_listen: String,
     pub auth_tokens: Vec<String>,
+    pub base_url: String,
 }
 
 pub(crate) async fn load_config() -> Result<(), ServerError> {

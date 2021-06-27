@@ -27,6 +27,7 @@ use regex::Regex;
 use tera::{Context, Tera};
 use tokio::sync::RwLock;
 use toml;
+use url::Url;
 
 use crate::config::{CONFIG, CONFIG_PATH, load_config};
 use crate::database::{add_measurement, get_recent_measurements};
@@ -216,13 +217,36 @@ async fn respond_405(allowed_methods: &[Method]) -> Result<Response<Body>, Infal
 }
 
 async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
-    let uri_string = parts.uri.to_string();
+    let req_uri_string = parts.uri.to_string();
+    let req_uri_noslash = req_uri_string.trim_start_matches('/');
+
+    let base_uri: Url = {
+        let base_uri_str = &CONFIG
+            .get().expect("cannot get config")
+            .read().await
+            .base_url;
+        match base_uri_str.parse() {
+            Ok(bus) => bus,
+            Err(e) => {
+                error!("failed to parse URI {:?}: {}", base_uri_str, e);
+                return respond_500();
+            },
+        }
+    };
+    let page_uri = match base_uri.join(&req_uri_noslash) {
+        Ok(pu) => pu,
+        Err(e) => {
+            error!("failed to join {} and {}: {}", base_uri, req_uri_noslash, e);
+            return respond_500();
+        }
+    };
+    let page_uri_string = page_uri.to_string();
 
     let mut context = Context::new();
-    context.insert("url", &uri_string);
+    context.insert("url", &page_uri_string);
 
     let mut headers = HashMap::new();
-    headers.insert(String::from("Location"), uri_string);
+    headers.insert(String::from("Location"), page_uri_string);
 
     respond_template(
         "redirect.html.tera",
