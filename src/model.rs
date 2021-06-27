@@ -10,6 +10,7 @@ pub(crate) struct Measurement {
     pub systolic: i32,
     pub diastolic: i32,
     pub pulse: i32,
+    pub spo2: Option<i32>,
 }
 impl Measurement {
     pub fn new(
@@ -18,6 +19,7 @@ impl Measurement {
         systolic: i32,
         diastolic: i32,
         pulse: i32,
+        spo2: Option<i32>,
     ) -> Measurement {
         Measurement {
             id,
@@ -25,6 +27,7 @@ impl Measurement {
             systolic,
             diastolic,
             pulse,
+            spo2,
         }
     }
 }
@@ -36,6 +39,7 @@ impl Serialize for Measurement {
         state.serialize_field("systolic", &self.systolic)?;
         state.serialize_field("diastolic", &self.diastolic)?;
         state.serialize_field("pulse", &self.pulse)?;
+        state.serialize_field("spo2", &self.spo2)?;
         state.end()
     }
 }

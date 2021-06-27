@@ -308,6 +308,13 @@ fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<Measure
     let systolic: i32 = get_req_form_i32_gt0(&req_kv, "systolic")?;
     let diastolic: i32 = get_req_form_i32_gt0(&req_kv, "diastolic")?;
     let pulse: i32 = get_req_form_i32_gt0(&req_kv, "pulse")?;
+    let spo2: Option<i32> = get_form_i32_gt0(&req_kv, "spo2")?;
+
+    if let Some(sat) = spo2 {
+        if sat > 100 {
+            return Err(ClientError::ValueTooHigh("spo2".into(), sat, 100));
+        }
+    }
 
     let local_now = Local::now();
     let fixed_now: DateTime<FixedOffset> = local_now.with_timezone(local_now.offset());
@@ -318,6 +325,7 @@ fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<Measure
         systolic,
         diastolic,
         pulse,
+        spo2,
     );
     Ok(measurement)
 }

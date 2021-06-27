@@ -35,8 +35,8 @@ pub(crate) async fn add_measurement(measurement: &mut Measurement) -> Result<i64
 
     let row = client
         .query_one(
-            "INSERT INTO beepee.measurements (timestamp, systolic, diastolic, pulse) VALUES ($1, $2, $3, $4) RETURNING id",
-            &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse],
+            "INSERT INTO beepee.measurements (timestamp, systolic, diastolic, pulse, spo2) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse, &measurement.spo2],
         )
         .await?;
     let measurement_id: i64 = row.get(0);
@@ -64,8 +64,8 @@ pub(crate) async fn update_measurement(measurement: &Measurement) -> Result<(), 
 
     client
         .execute(
-            "UPDATE beepee.measurements SET timestamp=$1, systolic=$2, diastolic=$3, pulse=$4 WHERE id=$5",
-            &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse, &measurement.id],
+            "UPDATE beepee.measurements SET timestamp=$1, systolic=$2, diastolic=$3, pulse=$4, spo2=$5 WHERE id=$6",
+            &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse, &measurement.spo2, &measurement.id],
         )
         .await?;
 
@@ -78,7 +78,7 @@ pub(crate) async fn get_recent_measurements(count: i64) -> Result<Vec<Measuremen
 
     let rows = client
         .query(
-            "SELECT id, timestamp, systolic, diastolic, pulse FROM beepee.measurements ORDER BY timestamp DESC LIMIT $1",
+            "SELECT id, timestamp, systolic, diastolic, pulse, spo2 FROM beepee.measurements ORDER BY timestamp DESC LIMIT $1",
             &[&count],
         )
         .await?;
@@ -90,6 +90,7 @@ pub(crate) async fn get_recent_measurements(count: i64) -> Result<Vec<Measuremen
             row.get(2),
             row.get(3),
             row.get(4),
+            row.get(5),
         ));
     }
 

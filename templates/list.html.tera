@@ -9,6 +9,7 @@
         <div><input type="number" name="systolic" class="systolic" placeholder="systolic mmHg" required="required" /></div>
         <div><input type="number" name="diastolic" class="diastolic" placeholder="diastolic mmHg" required="required" /></div>
         <div><input type="number" name="pulse" class="pulse" placeholder="pulse min&#8315;&#185;" required="required" /></div>
+        <div><input type="number" name="spo2" class="spo2" placeholder="SpO&#8322; %" /></div>
         <div><button type="submit">store</button></div>
     </form>
 
@@ -19,6 +20,7 @@
                 <th class="systolic">systolic mmHg</th>
                 <th class="diastolic">diastolic mmHg</th>
                 <th class="pulse">pulse min&#8315;&#185;</th>
+                <th class="spo2">SpO&#8322; %</th>
             </tr>
         </thead>
         <tbody>
@@ -28,6 +30,7 @@
                     <td class="systolic">{{ measurement.systolic }}</td>
                     <td class="diastolic">{{ measurement.diastolic }}</td>
                     <td class="pulse">{{ measurement.pulse }}</td>
+                    <td class="spo2">{{ measurement.spo2 }}</td>
                 </tr>
             {% endfor %}
         </tbody>
