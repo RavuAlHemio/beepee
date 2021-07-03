@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, Local};
 use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
 
@@ -6,7 +6,7 @@ use serde::ser::SerializeStruct;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct Measurement {
     pub id: i64,
-    pub timestamp: DateTime<FixedOffset>,
+    pub timestamp: DateTime<Local>,
     pub systolic: i32,
     pub diastolic: i32,
     pub pulse: i32,
@@ -15,7 +15,7 @@ pub(crate) struct Measurement {
 impl Measurement {
     pub fn new(
         id: i64,
-        timestamp: DateTime<FixedOffset>,
+        timestamp: DateTime<Local>,
         systolic: i32,
         diastolic: i32,
         pulse: i32,

@@ -14,7 +14,7 @@ use std::net::{AddrParseError, SocketAddr};
 use std::path::PathBuf;
 use std::result::Result;
 
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::Local;
 use env_logger;
 use form_urlencoded;
 use http::request::Parts;
@@ -317,11 +317,9 @@ fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<Measure
     }
 
     let local_now = Local::now();
-    let fixed_now: DateTime<FixedOffset> = local_now.with_timezone(local_now.offset());
-
     let measurement = Measurement::new(
         -1,
-        fixed_now,
+        local_now,
         systolic,
         diastolic,
         pulse,
