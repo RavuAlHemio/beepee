@@ -14,10 +14,13 @@ th, td
     vertical-align: top;
 }
 
-th
+@media (color)
 {
-    background-color: #603;
-    color: #fff;
+    th
+    {
+        background-color: #603;
+        color: #fff;
+    }
 }
 
 td.systolic, td.diastolic, td.pulse
