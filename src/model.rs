@@ -36,7 +36,7 @@ impl Serialize for Measurement {
         let mut state = serializer.serialize_struct("Measurement", 6)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
-        state.serialize_field("time", &self.timestamp.format("%H:%M:%S").to_string())?;
+        state.serialize_field("time", &self.timestamp.format("%H:%M").to_string())?;
         state.serialize_field("systolic", &self.systolic)?;
         state.serialize_field("diastolic", &self.diastolic)?;
         state.serialize_field("pulse", &self.pulse)?;
