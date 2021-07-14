@@ -46,7 +46,9 @@ impl Serialize for Measurement {
 }
 
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 pub(crate) struct DailyMeasurements {
+    pub date_string: String,
     pub morning: Option<Measurement>,
     pub midday: Option<Measurement>,
     pub evening: Option<Measurement>,
@@ -54,31 +56,22 @@ pub(crate) struct DailyMeasurements {
 }
 impl DailyMeasurements {
     pub fn new(
+        date_string: String,
         morning: Option<Measurement>,
         midday: Option<Measurement>,
         evening: Option<Measurement>,
         other: Vec<Measurement>,
     ) -> DailyMeasurements {
         DailyMeasurements {
+            date_string,
             morning,
             midday,
             evening,
             other,
         }
     }
-}
-impl Default for DailyMeasurements {
-    fn default() -> Self {
-        DailyMeasurements::new(None, None, None, Vec::new())
-    }
-}
-impl Serialize for DailyMeasurements {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("DailyMeasurements", 4)?;
-        state.serialize_field("morning", &self.morning)?;
-        state.serialize_field("midday", &self.midday)?;
-        state.serialize_field("evening", &self.evening)?;
-        state.serialize_field("other", &self.other)?;
-        state.end()
+
+    pub fn new_empty(date_string: String) -> DailyMeasurements {
+        DailyMeasurements::new(date_string, None, None, None, Vec::new())
     }
 }

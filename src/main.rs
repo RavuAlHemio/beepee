@@ -289,8 +289,8 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
 
         let date_string = day.format("%Y-%m-%d").to_string();
 
-        let entry = day_to_measurements.entry(date_string)
-            .or_insert_with(|| Default::default());
+        let entry = day_to_measurements.entry(date_string.clone())
+            .or_insert_with(|| DailyMeasurements::new_empty(date_string));
 
         let this_hour = measurement.timestamp.hour();
 
@@ -311,8 +311,14 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
         }
     }
 
+    let days_and_measurements: Vec<DailyMeasurements> = day_to_measurements
+        .values()
+        .rev()
+        .map(|v| v.clone())
+        .collect();
+
     let mut context = Context::new();
-    context.insert("day_to_measurements", &day_to_measurements);
+    context.insert("days_and_measurements", &days_and_measurements);
 
     respond_template(
         "list.html.tera",

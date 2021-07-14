@@ -31,9 +31,9 @@
             </tr>
         </thead>
         <tbody>
-            {% for day, measurements in day_to_measurements %}
+            {% for measurements in days_and_measurements %}
                 <tr>
-                    <td class="date">{{ day|escape }}</td>
+                    <td class="date">{{ measurements.date_string|escape }}</td>
                     {{ list_macros::output_reading(measurement=measurements.morning, day_part="morning") }}
                     {{ list_macros::output_reading(measurement=measurements.midday, day_part="midday") }}
                     {{ list_macros::output_reading(measurement=measurements.evening, day_part="evening") }}
