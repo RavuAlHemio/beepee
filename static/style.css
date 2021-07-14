@@ -24,3 +24,8 @@ td.systolic, td.diastolic, td.pulse
 {
     text-align: right;
 }
+
+td.missing
+{
+    color: #fff;
+}

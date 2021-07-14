@@ -1,3 +1,4 @@
+use chrono::{Duration, Local};
 use log::error;
 use tokio;
 use tokio_postgres::{self, Client, NoTls};
@@ -72,14 +73,16 @@ pub(crate) async fn update_measurement(measurement: &Measurement) -> Result<(), 
     Ok(())
 }
 
-pub(crate) async fn get_recent_measurements(count: i64) -> Result<Vec<Measurement>, tokio_postgres::Error> {
+pub(crate) async fn get_recent_measurements(ago: Duration) -> Result<Vec<Measurement>, tokio_postgres::Error> {
     let client = connect()
         .await?;
 
+    let start_time = Local::now() - ago;
+
     let rows = client
         .query(
-            "SELECT id, timestamp, systolic, diastolic, pulse, spo2 FROM beepee.measurements ORDER BY timestamp DESC LIMIT $1",
-            &[&count],
+            "SELECT id, timestamp, systolic, diastolic, pulse, spo2 FROM beepee.measurements WHERE timestamp >= $1 ORDER BY timestamp",
+            &[&start_time],
         )
         .await?;
     let mut ret = Vec::new();

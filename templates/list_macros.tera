@@ -1,0 +1,19 @@
+{% macro output_reading_header(day_part) %}
+    <th class="{{ day_part | escape }} time">time</th>
+    <th class="{{ day_part | escape }} pressure">pressure mmHg</th>
+    <th class="{{ day_part | escape }} pulse">pulse min&#8315;&#185;</th>
+    <th class="{{ day_part | escape }} spo2">SpO&#8322; %</th>
+{% endmacro %}
+
+{% macro output_reading(measurement, day_part) %}
+    {% if not measurement %}
+        <td class="{{ day_part|escape }} missing" colspan="4">missing</td>
+    {% else %}
+        <td class="{{ day_part|escape }} time">{{ measurement.time|escape }}</td>
+        <td class="{{ day_part|escape }} pressure">
+            <span class="systolic">{{ measurement.systolic }}</span>/<span class="diastolic">{{ measurement.diastolic }}</span>
+        </td>
+        <td class="{{ day_part|escape }} pulse">{{ measurement.pulse }}</td>
+        <td class="{{ day_part|escape }} spo2">{{ measurement.spo2 }}</td>
+    {% endif %}
+{% endmacro %}

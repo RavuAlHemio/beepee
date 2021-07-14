@@ -1,8 +1,10 @@
 {% extends "base.html.tera" %}
+{% import "list_macros.tera" as list_macros %}
 
 {% block title %}Blood Pressure{% endblock %}
 
 {% block content %}
+
     <h1>Blood Pressure</h1>
 
     <form class="input-form" method="post">
@@ -15,22 +17,27 @@
 
     <table class="last-measurements">
         <thead>
+            <tr class="sections">
+                <th class="date" rowspan="2">date</th>
+                <th class="morning" colspan="4">morning</th>
+                <th class="midday" colspan="4">midday</th>
+                <th class="evening" colspan="4">evening</th>
+                <th class="other-measurements" rowspan="2">others</th>
+            </tr>
             <tr>
-                <th class="timestamp">timestamp</th>
-                <th class="systolic">systolic mmHg</th>
-                <th class="diastolic">diastolic mmHg</th>
-                <th class="pulse">pulse min&#8315;&#185;</th>
-                <th class="spo2">SpO&#8322; %</th>
+                {{ list_macros::output_reading_header(day_part="morning") }}
+                {{ list_macros::output_reading_header(day_part="midday") }}
+                {{ list_macros::output_reading_header(day_part="evening") }}
             </tr>
         </thead>
         <tbody>
-            {% for measurement in last_measurements %}
+            {% for day, measurements in day_to_measurements %}
                 <tr>
-                    <td class="timestamp">{{ measurement.timestamp }}</td>
-                    <td class="systolic">{{ measurement.systolic }}</td>
-                    <td class="diastolic">{{ measurement.diastolic }}</td>
-                    <td class="pulse">{{ measurement.pulse }}</td>
-                    <td class="spo2">{{ measurement.spo2 }}</td>
+                    <td class="date">{{ day|escape }}</td>
+                    {{ list_macros::output_reading(measurement=measurements.morning, day_part="morning") }}
+                    {{ list_macros::output_reading(measurement=measurements.midday, day_part="midday") }}
+                    {{ list_macros::output_reading(measurement=measurements.evening, day_part="evening") }}
+                    <td class="other-measurements">{{ measurements.other|length }}</td>
                 </tr>
             {% endfor %}
         </tbody>

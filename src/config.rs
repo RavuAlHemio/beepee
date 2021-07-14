@@ -14,12 +14,23 @@ pub(crate) static CONFIG_PATH: OnceCell<PathBuf> = OnceCell::new();
 pub(crate) static CONFIG: OnceCell<RwLock<Config>> = OnceCell::new();
 
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub(crate) struct Hours {
+    pub morning_start: u32,
+    pub morning_end: u32,
+    pub midday_start: u32,
+    pub midday_end: u32,
+    pub evening_start: u32,
+}
+
+
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub(crate) struct Config {
     pub db_conn_string: String,
     pub http_listen: String,
     pub auth_tokens: Vec<String>,
     pub base_url: String,
+    pub hours: Hours,
 }
 
 pub(crate) async fn load_config() -> Result<(), ServerError> {

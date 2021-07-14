@@ -3,7 +3,7 @@ mod database;
 mod model;
 
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::error::Error;
 use std::ffi::OsString;
@@ -14,7 +14,7 @@ use std::net::{AddrParseError, SocketAddr};
 use std::path::PathBuf;
 use std::result::Result;
 
-use chrono::Local;
+use chrono::{Duration, Local, Timelike};
 use env_logger;
 use form_urlencoded;
 use http::request::Parts;
@@ -31,7 +31,7 @@ use url::Url;
 
 use crate::config::{CONFIG, CONFIG_PATH, load_config};
 use crate::database::{add_measurement, get_recent_measurements};
-use crate::model::Measurement;
+use crate::model::{DailyMeasurements, Measurement};
 
 
 static TERA: OnceCell<RwLock<Tera>> = OnceCell::new();
@@ -126,7 +126,7 @@ async fn respond_template(
     let body = match render_template(template_name, context).await {
         Ok(b) => b,
         Err(e) => {
-            error!("failed to render template: {}", e);
+            error!("failed to render template: {:?}", e);
             return respond_500();
         },
     };
@@ -263,16 +263,56 @@ async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
 }
 
 async fn get_index() -> Result<Response<Body>, Infallible> {
-    let recent_measurements = match get_recent_measurements(10).await {
+    let mut recent_measurements = match get_recent_measurements(Duration::days(31)).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error obtaining recent measurements: {}", e);
             return respond_500();
         },
     };
+    recent_measurements.sort_by_key(|m| m.timestamp);
+
+    // group measurements by day
+    let hours = {
+        let config_guard = CONFIG
+            .get().unwrap()
+            .read().await;
+        config_guard.hours
+    };
+    let mut day_to_measurements: BTreeMap<String, DailyMeasurements> = BTreeMap::new();
+    for measurement in recent_measurements.drain(..) {
+        let mut day = measurement.timestamp.date().naive_local();
+        if measurement.timestamp.hour() < hours.morning_start {
+            // count this as (the evening of) the previous day
+            day = day.pred();
+        }
+
+        let date_string = day.format("%Y-%m-%d").to_string();
+
+        let entry = day_to_measurements.entry(date_string)
+            .or_insert_with(|| Default::default());
+
+        let this_hour = measurement.timestamp.hour();
+
+        if this_hour < hours.morning_start && entry.evening.is_none() {
+            // night (previous day)
+            entry.evening = Some(measurement);
+        } else if this_hour >= hours.morning_start && this_hour < hours.morning_end && entry.morning.is_none() {
+            // morning
+            entry.morning = Some(measurement);
+        } else if this_hour >= hours.midday_start && this_hour < hours.midday_end && entry.midday.is_none() {
+            // midday
+            entry.midday = Some(measurement);
+        } else if this_hour >= hours.evening_start && entry.evening.is_none() {
+            // night
+            entry.evening = Some(measurement);
+        } else {
+            entry.other.push(measurement);
+        }
+    }
 
     let mut context = Context::new();
-    context.insert("last_measurements", &recent_measurements);
+    context.insert("day_to_measurements", &day_to_measurements);
 
     respond_template(
         "list.html.tera",
