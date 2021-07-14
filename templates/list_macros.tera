@@ -1,8 +1,8 @@
 {% macro output_reading_header(day_part) %}
     <th class="{{ day_part | escape }} time">time</th>
-    <th class="{{ day_part | escape }} pressure">pressure mmHg</th>
-    <th class="{{ day_part | escape }} pulse">pulse min&#8315;&#185;</th>
-    <th class="{{ day_part | escape }} spo2">SpO&#8322; %</th>
+    <th class="{{ day_part | escape }} pressure">pressure</th>
+    <th class="{{ day_part | escape }} pulse">pulse</th>
+    <th class="{{ day_part | escape }} spo2">SpO&#8322;</th>
 {% endmacro %}
 
 {% macro output_reading(measurement, day_part) %}

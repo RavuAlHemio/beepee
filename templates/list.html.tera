@@ -42,4 +42,6 @@
             {% endfor %}
         </tbody>
     </table>
+
+    <p>pressure systolic/diastolic in mmHg, pulse in min&#8315;&#185;, SpO&#8322; in %</p>
 {% endblock %}
