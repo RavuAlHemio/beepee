@@ -29,3 +29,8 @@ td.missing
 {
     color: #fff;
 }
+
+@media print
+{
+    form.input-form { display: none; }
+}
