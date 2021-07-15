@@ -263,7 +263,7 @@ async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
 }
 
 async fn get_index() -> Result<Response<Body>, Infallible> {
-    let mut recent_measurements = match get_recent_measurements(Duration::days(31)).await {
+    let mut recent_measurements = match get_recent_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error obtaining recent measurements: {}", e);
