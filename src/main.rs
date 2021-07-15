@@ -280,7 +280,21 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
         config_guard.hours
     };
     let mut day_to_measurements: BTreeMap<String, DailyMeasurements> = BTreeMap::new();
-    for measurement in recent_measurements.drain(..) {
+    let mut max_measurement: Option<Measurement> = None;
+    let mut min_measurement: Option<Measurement> = None;
+    for measurement in &recent_measurements {
+        if let Some(mm) = &mut max_measurement {
+            *mm = mm.max(&measurement);
+        } else {
+            max_measurement = Some(measurement.clone());
+        }
+
+        if let Some(mm) = &mut min_measurement {
+            *mm = mm.min(&measurement);
+        } else {
+            min_measurement = Some(measurement.clone());
+        }
+
         let mut day = measurement.timestamp.date().naive_local();
         if measurement.timestamp.hour() < hours.morning_start {
             // count this as (the evening of) the previous day
@@ -296,18 +310,18 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
 
         if this_hour < hours.morning_start && entry.evening.is_none() {
             // night (previous day)
-            entry.evening = Some(measurement);
+            entry.evening = Some(measurement.clone());
         } else if this_hour >= hours.morning_start && this_hour < hours.morning_end && entry.morning.is_none() {
             // morning
-            entry.morning = Some(measurement);
+            entry.morning = Some(measurement.clone());
         } else if this_hour >= hours.midday_start && this_hour < hours.midday_end && entry.midday.is_none() {
             // midday
-            entry.midday = Some(measurement);
+            entry.midday = Some(measurement.clone());
         } else if this_hour >= hours.evening_start && entry.evening.is_none() {
             // night
-            entry.evening = Some(measurement);
+            entry.evening = Some(measurement.clone());
         } else {
-            entry.other.push(measurement);
+            entry.other.push(measurement.clone());
         }
     }
 
@@ -317,8 +331,20 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
         .map(|v| v.clone())
         .collect();
 
+    // calculate percentiles
+    let average = Measurement::average(&recent_measurements);
+    let quasi_q1 = Measurement::quasi_n_tile(&recent_measurements, 1, 4);
+    let quasi_q2 = Measurement::quasi_n_tile(&recent_measurements, 1, 2);
+    let quasi_q3 = Measurement::quasi_n_tile(&recent_measurements, 3, 4);
+
     let mut context = Context::new();
     context.insert("days_and_measurements", &days_and_measurements);
+    context.insert("max_measurement", &max_measurement);
+    context.insert("quasi_q3_measurement", &quasi_q3);
+    context.insert("avg_measurement", &average);
+    context.insert("quasi_q2_measurement", &quasi_q2);
+    context.insert("quasi_q1_measurement", &quasi_q1);
+    context.insert("min_measurement", &min_measurement);
 
     respond_template(
         "list.html.tera",

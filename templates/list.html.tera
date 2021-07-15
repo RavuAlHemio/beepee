@@ -43,5 +43,40 @@
         </tbody>
     </table>
 
+    <table class="min-max">
+        <tr class="header">
+            <th class="metric">metric</th>
+            <th class="systolic">systolic BP</th>
+            <th class="diastolic">diastolic BP</th>
+            <th class="pulse">pulse</th>
+            <th class="spo2">SpO&#8322;</th>
+        </tr>
+        <tr class="maximum">
+            <td class="metric">maximum</td>
+            {{ list_macros::output_measurement_minmax_cols(measurement=max_measurement) }}
+        </tr>
+        <tr class="quasi-quartile-3">
+            <td class="metric">quasi-3rd quartile</td>
+            {{ list_macros::output_measurement_minmax_cols(measurement=quasi_q3_measurement) }}
+        </tr>
+        <tr class="average">
+            <td class="metric">average</td>
+            {{ list_macros::output_measurement_minmax_cols(measurement=avg_measurement) }}
+        </tr>
+        <tr class="quasi-median">
+            <td class="metric">quasi-median</td>
+            {{ list_macros::output_measurement_minmax_cols(measurement=quasi_q2_measurement) }}
+        </tr>
+        <tr class="quasi-quartile-1">
+            <td class="metric">quasi-1st quartile</td>
+            {{ list_macros::output_measurement_minmax_cols(measurement=quasi_q1_measurement) }}
+        </tr>
+        <tr class="minimum">
+            <td class="metric">minimum</td>
+            {{ list_macros::output_measurement_minmax_cols(measurement=min_measurement) }}
+        </tr>
+    </table>
+
     <p>pressure systolic/diastolic in mmHg, pulse in min&#8315;&#185;, SpO&#8322; in %</p>
+
 {% endblock %}

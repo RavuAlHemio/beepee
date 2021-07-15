@@ -17,3 +17,11 @@
         <td class="{{ day_part|escape }} spo2">{{ measurement.spo2 }}</td>
     {% endif %}
 {% endmacro %}
+
+
+{% macro output_measurement_minmax_cols(measurement) %}
+    <td class="systolic">{{ measurement.systolic }}</td>
+    <td class="diastolic">{{ measurement.diastolic }}</td>
+    <td class="pulse">{{ measurement.pulse }}</td>
+    <td class="spo2">{{ measurement.spo2 }}</td>
+{% endmacro %}
