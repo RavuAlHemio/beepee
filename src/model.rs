@@ -1,12 +1,13 @@
 use std::convert::TryInto;
 
 use chrono::{DateTime, Local};
+use num_rational::Rational32;
 use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
 
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct Measurement {
+pub(crate) struct BloodPressureMeasurement {
     pub id: i64,
     pub timestamp: DateTime<Local>,
     pub systolic: i32,
@@ -14,7 +15,7 @@ pub(crate) struct Measurement {
     pub pulse: i32,
     pub spo2: Option<i32>,
 }
-impl Measurement {
+impl BloodPressureMeasurement {
     pub fn new(
         id: i64,
         timestamp: DateTime<Local>,
@@ -22,8 +23,8 @@ impl Measurement {
         diastolic: i32,
         pulse: i32,
         spo2: Option<i32>,
-    ) -> Measurement {
-        Measurement {
+    ) -> Self {
+        Self {
             id,
             timestamp,
             systolic,
@@ -33,14 +34,14 @@ impl Measurement {
         }
     }
 
-    pub fn max(&self, other: &Measurement) -> Measurement {
+    pub fn values_max(&self, other: &Self) -> Self {
         let spo2 = match (self.spo2, other.spo2) {
             (None, None) => None,
             (Some(sv), None) => Some(sv),
             (None, Some(ov)) => Some(ov),
             (Some(sv), Some(ov)) => Some(sv.max(ov)),
         };
-        Measurement::new(
+        Self::new(
             -1,
             self.timestamp.max(other.timestamp),
             self.systolic.max(other.systolic),
@@ -50,14 +51,14 @@ impl Measurement {
         )
     }
 
-    pub fn min(&self, other: &Measurement) -> Measurement {
+    pub fn values_min(&self, other: &Self) -> Self {
         let spo2 = match (self.spo2, other.spo2) {
             (None, None) => None,
             (Some(sv), None) => Some(sv),
             (None, Some(ov)) => Some(ov),
             (Some(sv), Some(ov)) => Some(sv.min(ov)),
         };
-        Measurement::new(
+        Self::new(
             -1,
             self.timestamp.min(other.timestamp),
             self.systolic.min(other.systolic),
@@ -67,7 +68,7 @@ impl Measurement {
         )
     }
 
-    pub fn average(measurements: &[Measurement]) -> Measurement {
+    pub fn average(measurements: &[Self]) -> Self {
         assert_ne!(measurements.len(), 0);
         let len_i32: i32 = measurements.len().try_into().unwrap();
 
@@ -84,7 +85,7 @@ impl Measurement {
             None
         };
 
-        Measurement::new(
+        Self::new(
             -1,
             measurements[0].timestamp,
             systolic_sum / len_i32,
@@ -94,7 +95,7 @@ impl Measurement {
         )
     }
 
-    pub fn quasi_n_tile(measurements: &[Measurement], n_num: usize, n_den: usize) -> Measurement {
+    pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
         assert_ne!(measurements.len(), 0);
 
         let index = (measurements.len() - 1) * n_num / n_den;
@@ -112,7 +113,7 @@ impl Measurement {
         let spo2_index = (spo2s.len() - 1) * n_num / n_den;
         spo2s.sort_unstable();
 
-        Measurement::new(
+        Self::new(
             -1,
             measurements[0].timestamp,
             systolics[index],
@@ -122,9 +123,12 @@ impl Measurement {
         )
     }
 }
-impl Serialize for Measurement {
+impl Serialize for BloodPressureMeasurement {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("Measurement", 6)?;
+        let mut state = serializer.serialize_struct(
+            stringify!(BloodPressureMeasurement),
+            7,
+        )?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
         state.serialize_field("time", &self.timestamp.format("%H:%M").to_string())?;
@@ -138,22 +142,22 @@ impl Serialize for Measurement {
 
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-pub(crate) struct DailyMeasurements {
+pub(crate) struct DailyBloodPressureMeasurements {
     pub date_string: String,
-    pub morning: Option<Measurement>,
-    pub midday: Option<Measurement>,
-    pub evening: Option<Measurement>,
-    pub other: Vec<Measurement>,
+    pub morning: Option<BloodPressureMeasurement>,
+    pub midday: Option<BloodPressureMeasurement>,
+    pub evening: Option<BloodPressureMeasurement>,
+    pub other: Vec<BloodPressureMeasurement>,
 }
-impl DailyMeasurements {
+impl DailyBloodPressureMeasurements {
     pub fn new(
         date_string: String,
-        morning: Option<Measurement>,
-        midday: Option<Measurement>,
-        evening: Option<Measurement>,
-        other: Vec<Measurement>,
-    ) -> DailyMeasurements {
-        DailyMeasurements {
+        morning: Option<BloodPressureMeasurement>,
+        midday: Option<BloodPressureMeasurement>,
+        evening: Option<BloodPressureMeasurement>,
+        other: Vec<BloodPressureMeasurement>,
+    ) -> Self {
+        Self {
             date_string,
             morning,
             midday,
@@ -162,7 +166,85 @@ impl DailyMeasurements {
         }
     }
 
-    pub fn new_empty(date_string: String) -> DailyMeasurements {
-        DailyMeasurements::new(date_string, None, None, None, Vec::new())
+    pub fn new_empty(date_string: String) -> Self {
+        Self::new(date_string, None, None, None, Vec::new())
+    }
+}
+
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct BodyMassMeasurement {
+    pub id: i64,
+    pub timestamp: DateTime<Local>,
+    pub mass: Rational32,
+}
+impl BodyMassMeasurement {
+    pub fn new(
+        id: i64,
+        timestamp: DateTime<Local>,
+        mass: Rational32,
+    ) -> Self {
+        Self {
+            id,
+            timestamp,
+            mass,
+        }
+    }
+
+    pub fn values_max(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.max(other.timestamp),
+            self.mass.max(other.mass),
+        )
+    }
+
+    pub fn values_min(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.min(other.timestamp),
+            self.mass.min(other.mass),
+        )
+    }
+
+    pub fn average(measurements: &[Self]) -> Self {
+        assert_ne!(measurements.len(), 0);
+        let len_i32: i32 = measurements.len().try_into().unwrap();
+        let len_r32: Rational32 = len_i32.into();
+
+        let mass_sum: Rational32 = measurements.iter().map(|m| m.mass).sum();
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            mass_sum / len_r32,
+        )
+    }
+
+    pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
+        assert_ne!(measurements.len(), 0);
+
+        let index = (measurements.len() - 1) * n_num / n_den;
+
+        let mut masses: Vec<Rational32> = measurements.iter().map(|m| m.mass).collect();
+        masses.sort_unstable();
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            masses[index],
+        )
+    }
+}
+impl Serialize for BodyMassMeasurement {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct(
+            stringify!(BodyMassMeasurement),
+            3,
+        )?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
+        state.serialize_field("mass", &self.mass.to_string())?;
+        state.end()
     }
 }

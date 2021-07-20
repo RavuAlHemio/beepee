@@ -1,6 +1,8 @@
 mod config;
 mod database;
 mod model;
+mod numerism;
+mod templating;
 
 
 use std::collections::{BTreeMap, HashMap};
@@ -20,6 +22,8 @@ use hyper::{Body, Method, Request, Response, Server};
 use hyper::body;
 use hyper::service::{make_service_fn, service_fn};
 use log::error;
+use num_rational::Rational32;
+use num_traits::Zero;
 use once_cell::sync::{Lazy, OnceCell};
 use regex::Regex;
 use tera::{Context, Tera};
@@ -28,8 +32,13 @@ use toml;
 use url::Url;
 
 use crate::config::{CONFIG, CONFIG_PATH, load_config};
-use crate::database::{add_measurement, get_recent_measurements};
-use crate::model::{DailyMeasurements, Measurement};
+use crate::database::{
+    add_blood_pressure_measurement, add_mass_measurement, get_recent_blood_pressure_measurements,
+    get_recent_mass_measurements,
+};
+use crate::model::{DailyBloodPressureMeasurements, BloodPressureMeasurement, BodyMassMeasurement};
+use crate::numerism::{ParseRationalError, r32_from_decimal};
+use crate::templating::RatioToFloat;
 
 
 static TERA: OnceCell<RwLock<Tera>> = OnceCell::new();
@@ -82,8 +91,10 @@ impl Error for ServerError {
 pub(crate) enum ClientError {
     MissingValue(String),
     FailedToParseIntValue(String, String, std::num::ParseIntError),
-    ValueZeroOrLess(String, i32),
-    ValueTooHigh(String, i32, i32),
+    FailedToParseRationalValue(String, String, ParseRationalError),
+    IntValueZeroOrLess(String, i32),
+    RationalValueZeroOrLess(String, Rational32),
+    IntValueTooHigh(String, i32, i32),
 }
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -91,10 +102,14 @@ impl fmt::Display for ClientError {
             ClientError::MissingValue(key)
                 => write!(f, "missing value for key: {}", key),
             ClientError::FailedToParseIntValue(key, value, err)
-                => write!(f, "failed to parse value {:?} for key {:?}: {}", value, key, err),
-            ClientError::ValueZeroOrLess(key, value)
+                => write!(f, "failed to parse value {:?} for key {:?} as integer: {}", value, key, err),
+            ClientError::FailedToParseRationalValue(key, value, err)
+                => write!(f, "failed to parse value {:?} for key {:?} as a rational number: {}", value, key, err),
+            ClientError::IntValueZeroOrLess(key, value)
                 => write!(f, "value {} for key {:?} is zero or less", value, key),
-            ClientError::ValueTooHigh(key, value, max)
+            ClientError::RationalValueZeroOrLess(key, value)
+                => write!(f, "value {} for key {:?} is zero or less", value, key),
+            ClientError::IntValueTooHigh(key, value, max)
                 => write!(f, "value {} for key {:?} is too high (> {})", value, key, max),
         }
     }
@@ -261,7 +276,7 @@ async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
 }
 
 async fn get_index() -> Result<Response<Body>, Infallible> {
-    let mut recent_measurements = match get_recent_measurements(Duration::days(3*31)).await {
+    let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error obtaining recent measurements: {}", e);
@@ -277,18 +292,18 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
             .read().await;
         config_guard.hours
     };
-    let mut day_to_measurements: BTreeMap<String, DailyMeasurements> = BTreeMap::new();
-    let mut max_measurement: Option<Measurement> = None;
-    let mut min_measurement: Option<Measurement> = None;
+    let mut day_to_measurements: BTreeMap<String, DailyBloodPressureMeasurements> = BTreeMap::new();
+    let mut max_measurement: Option<BloodPressureMeasurement> = None;
+    let mut min_measurement: Option<BloodPressureMeasurement> = None;
     for measurement in &recent_measurements {
         if let Some(mm) = &mut max_measurement {
-            *mm = mm.max(&measurement);
+            *mm = mm.values_max(&measurement);
         } else {
             max_measurement = Some(measurement.clone());
         }
 
         if let Some(mm) = &mut min_measurement {
-            *mm = mm.min(&measurement);
+            *mm = mm.values_min(&measurement);
         } else {
             min_measurement = Some(measurement.clone());
         }
@@ -301,8 +316,9 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
 
         let date_string = day.format("%Y-%m-%d").to_string();
 
-        let entry = day_to_measurements.entry(date_string.clone())
-            .or_insert_with(|| DailyMeasurements::new_empty(date_string));
+        let entry = day_to_measurements
+            .entry(date_string.clone())
+            .or_insert_with(|| DailyBloodPressureMeasurements::new_empty(date_string));
 
         let this_hour = measurement.timestamp.hour();
 
@@ -323,29 +339,85 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
         }
     }
 
-    let days_and_measurements: Vec<DailyMeasurements> = day_to_measurements
+    let days_and_measurements: Vec<DailyBloodPressureMeasurements> = day_to_measurements
         .values()
         .rev()
         .map(|v| v.clone())
         .collect();
 
-    // calculate percentiles
-    let average = Measurement::average(&recent_measurements);
-    let quasi_q1 = Measurement::quasi_n_tile(&recent_measurements, 1, 4);
-    let quasi_q2 = Measurement::quasi_n_tile(&recent_measurements, 1, 2);
-    let quasi_q3 = Measurement::quasi_n_tile(&recent_measurements, 3, 4);
-
     let mut context = Context::new();
     context.insert("days_and_measurements", &days_and_measurements);
-    context.insert("max_measurement", &max_measurement);
-    context.insert("quasi_q3_measurement", &quasi_q3);
-    context.insert("avg_measurement", &average);
-    context.insert("quasi_q2_measurement", &quasi_q2);
-    context.insert("quasi_q1_measurement", &quasi_q1);
-    context.insert("min_measurement", &min_measurement);
+
+    if days_and_measurements.len() > 0 {
+        // calculate percentiles
+        let average = BloodPressureMeasurement::average(&recent_measurements);
+        let quasi_q1 = BloodPressureMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
+        let quasi_q2 = BloodPressureMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
+        let quasi_q3 = BloodPressureMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
+
+        context.insert("max_measurement", &max_measurement);
+        context.insert("quasi_q3_measurement", &quasi_q3);
+        context.insert("avg_measurement", &average);
+        context.insert("quasi_q2_measurement", &quasi_q2);
+        context.insert("quasi_q1_measurement", &quasi_q1);
+        context.insert("min_measurement", &min_measurement);
+    }
 
     respond_template(
         "list.html.tera",
+        &context,
+        200,
+        &HashMap::new(),
+    ).await
+}
+
+async fn get_mass() -> Result<Response<Body>, Infallible> {
+    let mut recent_measurements = match get_recent_mass_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+    recent_measurements.sort_by_key(|m| m.timestamp);
+    recent_measurements.reverse();
+
+    let mut max_measurement: Option<BodyMassMeasurement> = None;
+    let mut min_measurement: Option<BodyMassMeasurement> = None;
+    for measurement in &recent_measurements {
+        if let Some(mm) = &mut max_measurement {
+            *mm = mm.values_max(&measurement);
+        } else {
+            max_measurement = Some(measurement.clone());
+        }
+
+        if let Some(mm) = &mut min_measurement {
+            *mm = mm.values_min(&measurement);
+        } else {
+            min_measurement = Some(measurement.clone());
+        }
+    }
+
+    let mut context = Context::new();
+    context.insert("measurements", &recent_measurements);
+
+    if recent_measurements.len() > 0 {
+        // calculate percentiles
+        let average = BodyMassMeasurement::average(&recent_measurements);
+        let quasi_q1 = BodyMassMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
+        let quasi_q2 = BodyMassMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
+        let quasi_q3 = BodyMassMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
+
+        context.insert("max_measurement", &max_measurement);
+        context.insert("quasi_q3_measurement", &quasi_q3);
+        context.insert("avg_measurement", &average);
+        context.insert("quasi_q2_measurement", &quasi_q2);
+        context.insert("quasi_q1_measurement", &quasi_q1);
+        context.insert("min_measurement", &min_measurement);
+    }
+
+    respond_template(
+        "mass_list.html.tera",
         &context,
         200,
         &HashMap::new(),
@@ -360,7 +432,7 @@ fn get_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Optio
     let i32_value: i32 = string_value.parse()
         .map_err(|e| ClientError::FailedToParseIntValue(String::from(key), string_value.clone(), e))?;
     if i32_value < 0 {
-        Err(ClientError::ValueZeroOrLess(String::from(key), i32_value))
+        Err(ClientError::IntValueZeroOrLess(String::from(key), i32_value))
     } else {
         Ok(Some(i32_value))
     }
@@ -374,7 +446,29 @@ fn get_req_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<i
     }
 }
 
-fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<Measurement, ClientError> {
+fn get_form_r32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<Rational32>, ClientError> {
+    let string_value = match req_kv.get(key) {
+        Some(sv) => sv,
+        None => return Ok(None),
+    };
+    let r32_value: Rational32 = r32_from_decimal(string_value)
+        .map_err(|e| ClientError::FailedToParseRationalValue(String::from(key), string_value.clone(), e))?;
+    if r32_value < Zero::zero() {
+        Err(ClientError::RationalValueZeroOrLess(String::from(key), r32_value))
+    } else {
+        Ok(Some(r32_value))
+    }
+}
+
+fn get_req_form_r32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Rational32, ClientError> {
+    match get_form_r32_gt0(req_kv, key) {
+        Ok(Some(i)) => Ok(i),
+        Ok(None) => Err(ClientError::MissingValue(String::from(key))),
+        Err(e) => Err(e),
+    }
+}
+
+fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BloodPressureMeasurement, ClientError> {
     let systolic: i32 = get_req_form_i32_gt0(&req_kv, "systolic")?;
     let diastolic: i32 = get_req_form_i32_gt0(&req_kv, "diastolic")?;
     let pulse: i32 = get_req_form_i32_gt0(&req_kv, "pulse")?;
@@ -382,18 +476,30 @@ fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<Measure
 
     if let Some(sat) = spo2 {
         if sat > 100 {
-            return Err(ClientError::ValueTooHigh("spo2".into(), sat, 100));
+            return Err(ClientError::IntValueTooHigh("spo2".into(), sat, 100));
         }
     }
 
     let local_now = Local::now();
-    let measurement = Measurement::new(
+    let measurement = BloodPressureMeasurement::new(
         -1,
         local_now,
         systolic,
         diastolic,
         pulse,
         spo2,
+    );
+    Ok(measurement)
+}
+
+fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BodyMassMeasurement, ClientError> {
+    let mass: Rational32 = get_req_form_r32_gt0(&req_kv, "mass")?;
+
+    let local_now = Local::now();
+    let measurement = BodyMassMeasurement::new(
+        -1,
+        local_now,
+        mass,
     );
     Ok(measurement)
 }
@@ -418,7 +524,38 @@ async fn post_index(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         },
     };
 
-    match add_measurement(&mut new_measurement).await {
+    match add_blood_pressure_measurement(&mut new_measurement).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error adding measurement: {}", e);
+            return respond_500();
+        },
+    };
+
+    redirect_to_self(req_parts).await
+}
+
+async fn post_mass(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    let (req_parts, req_body) = req.into_parts();
+    let req_body_bytes = match body::to_bytes(req_body).await {
+        Ok(rbb) => rbb,
+        Err(e) => {
+            error!("error reading request bytes: {}", e);
+            return respond_500();
+        },
+    }.to_vec();
+    let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+
+    let mut new_measurement = match get_mass_measurement_from_form(&req_kv) {
+        Ok(nm) => nm,
+        Err(e) => {
+            return respond_400(e).await;
+        },
+    };
+
+    match add_mass_measurement(&mut new_measurement).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error adding measurement: {}", e);
@@ -506,6 +643,14 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
         } else {
             respond_405(&[Method::GET, Method::POST]).await
         }
+    } else if req.uri().path() == "/mass" {
+        if req.method() == Method::GET {
+            get_mass().await
+        } else if req.method() == Method::POST {
+            post_mass(req).await
+        } else {
+            respond_405(&[Method::GET, Method::POST]).await
+        }
     } else {
         respond_404().await
     }
@@ -525,6 +670,8 @@ async fn run() -> Result<(), ServerError> {
     load_config().await?;
 
     let mut tera = Tera::default();
+    tera.autoescape_on(vec![]);
+    tera.register_filter("ratio2float", RatioToFloat);
     tera.add_raw_templates(vec![
         ("400.html.tera", include_str!("../templates/400.html.tera")),
         ("403.html.tera", include_str!("../templates/403.html.tera")),
@@ -533,6 +680,7 @@ async fn run() -> Result<(), ServerError> {
         ("base.html.tera", include_str!("../templates/base.html.tera")),
         ("list_macros.tera", include_str!("../templates/list_macros.tera")),
         ("list.html.tera", include_str!("../templates/list.html.tera")),
+        ("mass_list.html.tera", include_str!("../templates/mass_list.html.tera")),
         ("redirect.html.tera", include_str!("../templates/redirect.html.tera")),
     ])
         .map_err(|e| ServerError::TemplatingSetup(e))?;

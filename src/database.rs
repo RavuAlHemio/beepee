@@ -1,10 +1,12 @@
 use chrono::{Duration, Local};
 use log::error;
+use num_rational::Rational32;
 use tokio;
 use tokio_postgres::{self, Client, NoTls};
 
 use crate::config::CONFIG;
-use crate::model::Measurement;
+use crate::model::{BloodPressureMeasurement, BodyMassMeasurement};
+use crate::numerism::r32_from_decimal;
 
 
 async fn get_conn_string() -> String {
@@ -30,13 +32,13 @@ async fn connect() -> Result<Client, tokio_postgres::Error> {
     Ok(client)
 }
 
-pub(crate) async fn add_measurement(measurement: &mut Measurement) -> Result<i64, tokio_postgres::Error> {
+pub(crate) async fn add_blood_pressure_measurement(measurement: &mut BloodPressureMeasurement) -> Result<i64, tokio_postgres::Error> {
     let client = connect()
         .await?;
 
     let row = client
         .query_one(
-            "INSERT INTO beepee.measurements (timestamp, systolic, diastolic, pulse, spo2) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            "INSERT INTO beepee.measurements (\"timestamp\", systolic, diastolic, pulse, spo2) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse, &measurement.spo2],
         )
         .await?;
@@ -45,7 +47,7 @@ pub(crate) async fn add_measurement(measurement: &mut Measurement) -> Result<i64
     Ok(measurement_id)
 }
 
-pub(crate) async fn remove_measurement(measurement_id: i64) -> Result<(), tokio_postgres::Error> {
+pub(crate) async fn remove_blood_pressure_measurement(measurement_id: i64) -> Result<(), tokio_postgres::Error> {
     let client = connect()
         .await?;
 
@@ -59,13 +61,13 @@ pub(crate) async fn remove_measurement(measurement_id: i64) -> Result<(), tokio_
     Ok(())
 }
 
-pub(crate) async fn update_measurement(measurement: &Measurement) -> Result<(), tokio_postgres::Error> {
+pub(crate) async fn update_blood_pressure_measurement(measurement: &BloodPressureMeasurement) -> Result<(), tokio_postgres::Error> {
     let client = connect()
         .await?;
 
     client
         .execute(
-            "UPDATE beepee.measurements SET timestamp=$1, systolic=$2, diastolic=$3, pulse=$4, spo2=$5 WHERE id=$6",
+            "UPDATE beepee.measurements SET \"timestamp\"=$1, systolic=$2, diastolic=$3, pulse=$4, spo2=$5 WHERE id=$6",
             &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse, &measurement.spo2, &measurement.id],
         )
         .await?;
@@ -73,7 +75,7 @@ pub(crate) async fn update_measurement(measurement: &Measurement) -> Result<(), 
     Ok(())
 }
 
-pub(crate) async fn get_recent_measurements(ago: Duration) -> Result<Vec<Measurement>, tokio_postgres::Error> {
+pub(crate) async fn get_recent_blood_pressure_measurements(ago: Duration) -> Result<Vec<BloodPressureMeasurement>, tokio_postgres::Error> {
     let client = connect()
         .await?;
 
@@ -81,19 +83,89 @@ pub(crate) async fn get_recent_measurements(ago: Duration) -> Result<Vec<Measure
 
     let rows = client
         .query(
-            "SELECT id, timestamp, systolic, diastolic, pulse, spo2 FROM beepee.measurements WHERE timestamp >= $1 ORDER BY timestamp",
+            "SELECT id, \"timestamp\", systolic, diastolic, pulse, spo2 FROM beepee.measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
     let mut ret = Vec::new();
     for row in rows {
-        ret.push(Measurement::new(
+        ret.push(BloodPressureMeasurement::new(
             row.get(0),
             row.get(1),
             row.get(2),
             row.get(3),
             row.get(4),
             row.get(5),
+        ));
+    }
+
+    Ok(ret)
+}
+
+pub(crate) async fn add_mass_measurement(measurement: &mut BodyMassMeasurement) -> Result<i64, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let row = client
+        .query_one(
+            "INSERT INTO beepee.mass_measurements (\"timestamp\", mass) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2))) RETURNING id",
+            &[&measurement.timestamp, &measurement.mass.numer(), &measurement.mass.denom()],
+        )
+        .await?;
+    let measurement_id: i64 = row.get(0);
+
+    Ok(measurement_id)
+}
+
+pub(crate) async fn remove_mass_measurement(measurement_id: i64) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "DELETE FROM beepee.mass_measurements WHERE id = $1",
+            &[&measurement_id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn update_mass_measurement(measurement: &BodyMassMeasurement) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)) WHERE id=$4",
+            &[&measurement.timestamp, &measurement.mass.numer(), &measurement.mass.denom(), &measurement.id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<BodyMassMeasurement>, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let start_time = Local::now() - ago;
+
+    let rows = client
+        .query(
+            "SELECT id, \"timestamp\", mass::character varying(128) FROM beepee.mass_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            &[&start_time],
+        )
+        .await?;
+    let mut ret = Vec::new();
+    for row in rows {
+        let mass_string: String = row.get(2);
+        let mass: Rational32 = r32_from_decimal(&mass_string)
+            .expect("parsing mass failed");
+        ret.push(BodyMassMeasurement::new(
+            row.get(0),
+            row.get(1),
+            mass,
         ));
     }
 

@@ -1,0 +1,67 @@
+{% extends "base.html.tera" %}
+{% import "list_macros.tera" as list_macros %}
+
+{% block title %}Body Mass{% endblock %}
+
+{% block content %}
+
+    <h1>Body Mass</h1>
+
+    <form class="input-form" method="post">
+        <div><input type="number" name="mass" class="mass" placeholder="mass kg" min="0.0" step="0.1" required="required" /></div>
+        <div><button type="submit">store</button></div>
+    </form>
+
+    <table class="last-measurements">
+        <thead>
+            <tr>
+                <th class="timestamp">timestamp</th>
+                <th class="mass">mass</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for measurement in measurements %}
+                <tr>
+                    <td class="timestamp">{{ measurement.timestamp|escape }}</td>
+                    <td class="mass">{{ measurement.mass|ratio2float }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if measurements %}
+        <table class="min-max">
+            <tr class="header">
+                <th class="metric">metric</th>
+                <th class="mass">mass</th>
+            </tr>
+            <tr class="maximum">
+                <td class="metric">maximum</td>
+                {{ list_macros::output_mass_minmax_cols(measurement=max_measurement) }}
+            </tr>
+            <tr class="quasi-quartile-3">
+                <td class="metric">quasi-3rd quartile</td>
+                {{ list_macros::output_mass_minmax_cols(measurement=quasi_q3_measurement) }}
+            </tr>
+            <tr class="average">
+                <td class="metric">average</td>
+                {{ list_macros::output_mass_minmax_cols(measurement=avg_measurement) }}
+            </tr>
+            <tr class="quasi-median">
+                <td class="metric">quasi-median</td>
+                {{ list_macros::output_mass_minmax_cols(measurement=quasi_q2_measurement) }}
+            </tr>
+            <tr class="quasi-quartile-1">
+                <td class="metric">quasi-1st quartile</td>
+                {{ list_macros::output_mass_minmax_cols(measurement=quasi_q1_measurement) }}
+            </tr>
+            <tr class="minimum">
+                <td class="metric">minimum</td>
+                {{ list_macros::output_mass_minmax_cols(measurement=min_measurement) }}
+            </tr>
+        </table>
+    {% endif %}
+
+    <p>mass in kg</p>
+
+{% endblock %}
