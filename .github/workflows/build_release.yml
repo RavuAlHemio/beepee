@@ -1,0 +1,24 @@
+name: beepee release build
+on: [push]
+jobs:
+  build-arch-release:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: check out repository code
+        uses: actions/checkout@v2
+      - name: update packages
+        run: pacman -Syu --noconfirm
+      - name: install build dependencies
+        run: pacman -S --needed --noconfirm cargo python
+      - name: check for forgotten templates and static files
+        run: python cicd/check_templates_statics.py
+      - name: run release build
+        run: cargo build --release
+      - name: run release tests
+        run: cargo test --release
+      - name: upload release binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: beepee-release
+          path: target/release/beepee
