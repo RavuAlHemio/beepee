@@ -8,8 +8,6 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::File;
-use std::io::{self, Read};
 use std::net::{AddrParseError, SocketAddr};
 use std::path::PathBuf;
 use std::result::Result;
@@ -446,23 +444,11 @@ async fn respond_static_file(file_name: &str) -> Result<Response<Body>, Infallib
         "application/octet-stream"
     };
 
-    let file_path: PathBuf = ["static", file_name].iter().collect();
-    let mut file = match File::open(&file_path) {
-        Ok(f) => f,
-        Err(e) => {
-            if e.kind() == io::ErrorKind::NotFound {
-                return respond_404().await;
-            } else {
-                error!("error opening file {:?}: {}", file_path, e);
-                return respond_500();
-            }
-        },
+    let buf = if file_name == "style.css" {
+        Vec::from(&include_bytes!("../static/style.css")[..])
+    } else {
+        return respond_404().await;
     };
-    let mut buf = Vec::new();
-    if let Err(e) = file.read_to_end(&mut buf) {
-        error!("error reading file {:?}: {}", file_path, e);
-        return respond_500();
-    }
 
     let response_res = Response::builder()
         .header("Content-Length", format!("{}", buf.len()))
@@ -538,7 +524,17 @@ async fn run() -> Result<(), ServerError> {
 
     load_config().await?;
 
-    let tera = Tera::new("templates/**/*")
+    let mut tera = Tera::default();
+    tera.add_raw_templates(vec![
+        ("400.html.tera", include_str!("../templates/400.html.tera")),
+        ("403.html.tera", include_str!("../templates/403.html.tera")),
+        ("404.html.tera", include_str!("../templates/404.html.tera")),
+        ("405.html.tera", include_str!("../templates/405.html.tera")),
+        ("base.html.tera", include_str!("../templates/base.html.tera")),
+        ("list_macros.tera", include_str!("../templates/list_macros.tera")),
+        ("list.html.tera", include_str!("../templates/list.html.tera")),
+        ("redirect.html.tera", include_str!("../templates/redirect.html.tera")),
+    ])
         .map_err(|e| ServerError::TemplatingSetup(e))?;
     TERA
         .set(RwLock::new(tera)).expect("failed to set templating engine");
