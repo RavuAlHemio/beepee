@@ -275,7 +275,7 @@ async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_index() -> Result<Response<Body>, Infallible> {
+async fn get_index(token_value: &str) -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -346,6 +346,7 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
         .collect();
 
     let mut context = Context::new();
+    context.insert("token", token_value);
     context.insert("days_and_measurements", &days_and_measurements);
 
     if days_and_measurements.len() > 0 {
@@ -371,7 +372,7 @@ async fn get_index() -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_mass() -> Result<Response<Body>, Infallible> {
+async fn get_mass(token_value: &str) -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_mass_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -399,6 +400,7 @@ async fn get_mass() -> Result<Response<Body>, Infallible> {
     }
 
     let mut context = Context::new();
+    context.insert("token", token_value);
     context.insert("measurements", &recent_measurements);
 
     if recent_measurements.len() > 0 {
@@ -637,7 +639,7 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
 
     if req.uri().path() == "/" {
         if req.method() == Method::GET {
-            get_index().await
+            get_index(token_value).await
         } else if req.method() == Method::POST {
             post_index(req).await
         } else {
@@ -645,7 +647,7 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
         }
     } else if req.uri().path() == "/mass" {
         if req.method() == Method::GET {
-            get_mass().await
+            get_mass(token_value).await
         } else if req.method() == Method::POST {
             post_mass(req).await
         } else {

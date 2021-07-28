@@ -81,4 +81,6 @@
 
     <p>pressure systolic/diastolic in mmHg, pulse in min&#8315;&#185;, SpO&#8322; in %</p>
 
+    <p><a href="mass?token={{ token|urlencode|escape }}">body mass</a></p>
+
 {% endblock %}
