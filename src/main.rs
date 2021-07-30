@@ -426,6 +426,74 @@ async fn get_mass(token_value: &str) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
+async fn get_api_bp() -> Result<Response<Body>, Infallible> {
+    let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+
+    recent_measurements.sort_by_key(|m| m.timestamp);
+
+    // make it a JSON
+    let recent_json = match serde_json::to_string(&recent_measurements) {
+        Ok(rj) => rj,
+        Err(e) => {
+            error!("error serializing recent measurements to JSON: {}", e);
+            return respond_500();
+        },
+    };
+
+    // spit it out
+    let response_res = Response::builder()
+        .status(200)
+        .header("Content-Type", "application/json")
+        .body(Body::from(recent_json));
+    match response_res {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            error!("failed to create response: {}", e);
+            return respond_500();
+        },
+    }
+}
+
+async fn get_api_mass() -> Result<Response<Body>, Infallible> {
+    let mut recent_measurements = match get_recent_mass_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+
+    recent_measurements.sort_by_key(|m| m.timestamp);
+
+    // make it a JSON
+    let recent_json = match serde_json::to_string(&recent_measurements) {
+        Ok(rj) => rj,
+        Err(e) => {
+            error!("error serializing recent measurements to JSON: {}", e);
+            return respond_500();
+        },
+    };
+
+    // spit it out
+    let response_res = Response::builder()
+        .status(200)
+        .header("Content-Type", "application/json")
+        .body(Body::from(recent_json));
+    match response_res {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            error!("failed to create response: {}", e);
+            return respond_500();
+        },
+    }
+}
+
 fn get_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<i32>, ClientError> {
     let string_value = match req_kv.get(key) {
         Some(sv) => sv,
@@ -652,6 +720,18 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
             post_mass(req).await
         } else {
             respond_405(&[Method::GET, Method::POST]).await
+        }
+    } else if req.uri().path() == "/api/bp" {
+        if req.method() == Method::GET {
+            get_api_bp().await
+        } else {
+            respond_405(&[Method::GET]).await
+        }
+    } else if req.uri().path() == "/api/mass" {
+        if req.method() == Method::GET {
+            get_api_mass().await
+        } else {
+            respond_405(&[Method::GET]).await
         }
     } else {
         respond_404().await
