@@ -127,10 +127,11 @@ impl Serialize for BloodPressureMeasurement {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct(
             stringify!(BloodPressureMeasurement),
-            7,
+            8,
         )?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
+        state.serialize_field("zoned_timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
         state.serialize_field("time", &self.timestamp.format("%H:%M").to_string())?;
         state.serialize_field("systolic", &self.systolic)?;
         state.serialize_field("diastolic", &self.diastolic)?;
@@ -240,10 +241,11 @@ impl Serialize for BodyMassMeasurement {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct(
             stringify!(BodyMassMeasurement),
-            3,
+            4,
         )?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
+        state.serialize_field("zoned_timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
         state.serialize_field("mass", &self.mass.to_string())?;
         state.end()
     }
