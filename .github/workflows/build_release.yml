@@ -13,6 +13,8 @@ jobs:
         run: pacman -S --needed --noconfirm cargo python
       - name: check for forgotten templates and static files
         run: python cicd/check_templates_statics.py
+      - name: fetch dependencies
+        run: sh ./cicd/cargo_fetch.sh
       - name: run release build
         run: cargo build --release
       - name: run release tests
