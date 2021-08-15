@@ -1,5 +1,6 @@
 mod config;
 mod database;
+mod datetime;
 mod model;
 mod numerism;
 mod templating;
@@ -285,6 +286,11 @@ async fn get_index(token_value: &str) -> Result<Response<Body>, Infallible> {
     };
     recent_measurements.sort_by_key(|m| m.timestamp);
 
+    let measurements_with_spo2: Vec<BloodPressureMeasurement> = recent_measurements.iter()
+        .filter(|m| m.spo2.is_some())
+        .map(|m| m.clone())
+        .collect();
+
     // group measurements by day
     let hours = {
         let config_guard = CONFIG
@@ -347,6 +353,8 @@ async fn get_index(token_value: &str) -> Result<Response<Body>, Infallible> {
 
     let mut context = Context::new();
     context.insert("token", token_value);
+    context.insert("measurements", &recent_measurements);
+    context.insert("measurements_with_spo2", &measurements_with_spo2);
     context.insert("days_and_measurements", &days_and_measurements);
 
     if days_and_measurements.len() > 0 {
@@ -653,6 +661,20 @@ async fn respond_static_file(file_name: &str) -> Result<Response<Body>, Infallib
 
     let buf = if file_name == "style.css" {
         Vec::from(&include_bytes!("../static/style.css")[..])
+    } else if file_name == "beepee.js" {
+        Vec::from(&include_bytes!("../static/beepee.js")[..])
+    } else if file_name == "beepee.js.map" {
+        Vec::from(&include_bytes!("../static/beepee.js.map")[..])
+    } else if file_name == "beepee.ts" {
+        Vec::from(&include_bytes!("../static/beepee.ts")[..])
+    } else if file_name == "chart.js" {
+        Vec::from(&include_bytes!("../static/chart.js")[..])
+    } else if file_name == "chart.min.js" {
+        Vec::from(&include_bytes!("../static/chart.min.js")[..])
+    } else if file_name == "luxon.js" {
+        Vec::from(&include_bytes!("../static/luxon.js")[..])
+    } else if file_name == "chartjs-adapter-luxon.js" {
+        Vec::from(&include_bytes!("../static/chartjs-adapter-luxon.js")[..])
     } else {
         return respond_404().await;
     };

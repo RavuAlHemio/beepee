@@ -3,6 +3,64 @@
 
 {% block title %}Blood Pressure{% endblock %}
 
+{% block scripts %}
+<script type="text/javascript" src="static/chart.js"></script>
+<script type="text/javascript" src="static/luxon.js"></script>
+<script type="text/javascript" src="static/chartjs-adapter-luxon.js"></script>
+<script type="text/javascript" src="static/beepee.js"></script>
+<script type="text/javascript">
+BeePee.tsToSystolic = [
+    {% for measurement in measurements -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.systolic }} }
+    {%- endfor %}
+];
+BeePee.tsToDiastolic = [
+    {% for measurement in measurements -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.diastolic }} }
+    {%- endfor %}
+];
+BeePee.tsToPulse = [
+    {% for measurement in measurements -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.pulse }} }
+    {%- endfor %}
+];
+BeePee.tsToSpo2 = [
+    {% for measurement in measurements_with_spo2 -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.spo2 }} }
+    {%- endfor %}
+];
+BeePee.todToSystolic = [
+    {% for measurement in measurements -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.systolic }} }
+    {%- endfor %}
+];
+BeePee.todToDiastolic = [
+    {% for measurement in measurements -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.diastolic }} }
+    {%- endfor %}
+];
+BeePee.todToPulse = [
+    {% for measurement in measurements -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.pulse }} }
+    {%- endfor %}
+];
+BeePee.todToSpo2 = [
+    {% for measurement in measurements_with_spo2 -%}
+        {%- if not loop.first %}, {% endif -%}
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.spo2 }} }
+    {%- endfor %}
+];
+BeePee.setUp();
+</script>
+{% endblock %}
+
 {% block content %}
 
     <h1>Blood Pressure</h1>
@@ -80,6 +138,14 @@
     {% endif %}
 
     <p>pressure systolic/diastolic in mmHg, pulse in min&#8315;&#185;, SpO&#8322; in %</p>
+
+    <div id="ts-chart-container">
+        <canvas id="ts-chart-canvas"></canvas>
+    </div>
+
+    <div id="tod-chart-container">
+        <canvas id="tod-chart-canvas"></canvas>
+    </div>
 
     <p><a href="mass?token={{ token|urlencode|escape }}">body mass</a></p>
 
