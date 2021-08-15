@@ -675,6 +675,8 @@ async fn respond_static_file(file_name: &str) -> Result<Response<Body>, Infallib
         Vec::from(&include_bytes!("../static/luxon.js")[..])
     } else if file_name == "chartjs-adapter-luxon.js" {
         Vec::from(&include_bytes!("../static/chartjs-adapter-luxon.js")[..])
+    } else if file_name == "tsconfig.json" {
+        Vec::from(&include_bytes!("../static/tsconfig.json")[..])
     } else {
         return respond_404().await;
     };
