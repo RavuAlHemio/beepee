@@ -149,6 +149,17 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
     let client = connect()
         .await?;
 
+    let height_cm: Option<i32> = {
+        let config_guard = CONFIG
+            .get().expect("initial config not set")
+            .read().await;
+        config_guard.height_cm
+    };
+    let height_m = height_cm
+        .map(|h| Rational32::new(h, 100));
+    let square_height_m2 = height_m
+        .map(|h| h * h);
+
     let start_time = Local::now() - ago;
 
     let rows = client
@@ -162,10 +173,14 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
         let mass_string: String = row.get(2);
         let mass: Rational32 = r32_from_decimal(&mass_string)
             .expect("parsing mass failed");
+        let bmi: Option<Rational32> = square_height_m2.map(|sqh|
+            mass / sqh
+        );
         ret.push(BodyMassMeasurement::new(
             row.get(0),
             row.get(1),
             mass,
+            bmi,
         ));
     }
 

@@ -570,14 +570,29 @@ fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BloodPr
     Ok(measurement)
 }
 
-fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BodyMassMeasurement, ClientError> {
+async fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BodyMassMeasurement, ClientError> {
     let mass: Rational32 = get_req_form_r32_gt0(&req_kv, "mass")?;
+
+    let height_cm: Option<i32> = {
+        let config_guard = CONFIG
+            .get().expect("initial config not set")
+            .read().await;
+        config_guard.height_cm
+    };
+    let height_m = height_cm
+        .map(|h| Rational32::new(h, 100));
+    let square_height_m2 = height_m
+        .map(|h| h * h);
+    let bmi: Option<Rational32> = square_height_m2.map(|sqh|
+        mass / sqh
+    );
 
     let local_now = Local::now();
     let measurement = BodyMassMeasurement::new(
         -1,
         local_now,
         mass,
+        bmi,
     );
     Ok(measurement)
 }
@@ -626,7 +641,7 @@ async fn post_mass(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
 
-    let mut new_measurement = match get_mass_measurement_from_form(&req_kv) {
+    let mut new_measurement = match get_mass_measurement_from_form(&req_kv).await {
         Ok(nm) => nm,
         Err(e) => {
             return respond_400(e).await;

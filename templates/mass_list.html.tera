@@ -17,6 +17,7 @@
             <tr>
                 <th class="timestamp">timestamp</th>
                 <th class="mass">mass</th>
+                <th class="bmi"><abbr title="Body Mass Index">BMI</abbr></th>
             </tr>
         </thead>
         <tbody>
@@ -24,6 +25,7 @@
                 <tr>
                     <td class="timestamp">{{ measurement.timestamp|escape }}</td>
                     <td class="mass">{{ measurement.mass|ratio2float }}</td>
+                    <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float }}{% endif %}</td>
                 </tr>
             {% endfor %}
         </tbody>
@@ -34,6 +36,7 @@
             <tr class="header">
                 <th class="metric">metric</th>
                 <th class="mass">mass</th>
+                <th class="bmi"><abbr title="Body Mass Index">BMI</abbr></th>
             </tr>
             <tr class="maximum">
                 <td class="metric">maximum</td>

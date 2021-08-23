@@ -4,6 +4,7 @@ http_listen = "127.0.0.1:8000"
 auth_tokens = [
     'dsEcJWLSHPvG4qN7HGxmz1khpMP6sf1xadLHhlxXgxbAq1L8sY5TDtSWqRpCYrPX',
 ]
+height_cm = 185
 
 [hours]
 morning_start = 5

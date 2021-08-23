@@ -31,6 +31,7 @@ pub(crate) struct Config {
     pub auth_tokens: Vec<String>,
     pub base_url: String,
     pub hours: Hours,
+    pub height_cm: Option<i32>,
 }
 
 pub(crate) async fn load_config() -> Result<(), ServerError> {

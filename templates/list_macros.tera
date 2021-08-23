@@ -28,4 +28,5 @@
 
 {% macro output_mass_minmax_cols(measurement) %}
     <td class="mass">{{ measurement.mass|ratio2float }}</td>
+    <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float }}{% endif %}</td>
 {% endmacro %}

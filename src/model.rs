@@ -2,6 +2,7 @@ use std::convert::TryInto;
 
 use chrono::{DateTime, Local};
 use num_rational::Rational32;
+use num_traits::Zero;
 use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
 
@@ -182,17 +183,20 @@ pub(crate) struct BodyMassMeasurement {
     pub id: i64,
     pub timestamp: DateTime<Local>,
     pub mass: Rational32,
+    pub bmi: Option<Rational32>,
 }
 impl BodyMassMeasurement {
     pub fn new(
         id: i64,
         timestamp: DateTime<Local>,
         mass: Rational32,
+        bmi: Option<Rational32>,
     ) -> Self {
         Self {
             id,
             timestamp,
             mass,
+            bmi,
         }
     }
 
@@ -201,6 +205,7 @@ impl BodyMassMeasurement {
             -1,
             self.timestamp.max(other.timestamp),
             self.mass.max(other.mass),
+            self.bmi.max(other.bmi),
         )
     }
 
@@ -209,6 +214,7 @@ impl BodyMassMeasurement {
             -1,
             self.timestamp.min(other.timestamp),
             self.mass.min(other.mass),
+            self.bmi.max(other.bmi),
         )
     }
 
@@ -217,27 +223,41 @@ impl BodyMassMeasurement {
         let len_i32: i32 = measurements.len().try_into().unwrap();
         let len_r32: Rational32 = len_i32.into();
 
+        let bmi_len_i32: i32 = measurements.iter().filter(|m| m.bmi.is_some()).count().try_into().unwrap();
+        let bmi_len_r32: Rational32 = bmi_len_i32.into();
+
         let mass_sum: Rational32 = measurements.iter().map(|m| m.mass).sum();
+        let bmi_sum: Rational32 = measurements.iter().filter_map(|m| m.bmi).sum();
 
         Self::new(
             -1,
             measurements[0].timestamp,
             mass_sum / len_r32,
+            if bmi_len_r32 != Rational32::zero() { Some(bmi_sum / bmi_len_r32) } else { None },
         )
     }
 
     pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
         assert_ne!(measurements.len(), 0);
 
-        let index = (measurements.len() - 1) * n_num / n_den;
-
         let mut masses: Vec<Rational32> = measurements.iter().map(|m| m.mass).collect();
         masses.sort_unstable();
+
+        let mut bmis: Vec<Rational32> = measurements.iter().filter_map(|m| m.bmi).collect();
+        bmis.sort_unstable();
+
+        let index = (measurements.len() - 1) * n_num / n_den;
+        let bmi_index = if bmis.len() == 0 {
+            0
+        } else {
+            (bmis.len() - 1) * n_num / n_den
+        };
 
         Self::new(
             -1,
             measurements[0].timestamp,
             masses[index],
+            bmis.get(bmi_index).map(|b| b.clone()),
         )
     }
 }
@@ -245,7 +265,7 @@ impl Serialize for BodyMassMeasurement {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct(
             stringify!(BodyMassMeasurement),
-            6,
+            7,
         )?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
@@ -253,6 +273,7 @@ impl Serialize for BodyMassMeasurement {
         state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&self.timestamp))?;
         state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&self.timestamp.time()))?;
         state.serialize_field("mass", &self.mass.to_string())?;
+        state.serialize_field("bmi", &self.bmi.map(|b| b.to_string()))?;
         state.end()
     }
 }
