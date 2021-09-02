@@ -32,11 +32,10 @@ impl Error for ParseRationalError {
 pub(crate) fn r32_from_decimal(decimal_str: &str) -> Result<Rational32, ParseRationalError> {
     let decimal_chars: Vec<char> = decimal_str.chars().collect();
     let mut dot_index: Option<usize> = None;
-    let mut negate = false;
 
     for (i, c) in decimal_chars.iter().enumerate() {
         if i == 0 && *c == '-' {
-            negate = true;
+            // leading minus is OK; it is processed as part of the mantissa
         } else if *c == '.' {
             if let Some(di) = dot_index {
                 return Err(ParseRationalError::MoreThanOneDot(di, i));
