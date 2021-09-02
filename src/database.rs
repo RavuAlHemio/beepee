@@ -38,8 +38,8 @@ pub(crate) async fn add_blood_pressure_measurement(measurement: &mut BloodPressu
 
     let row = client
         .query_one(
-            "INSERT INTO beepee.measurements (\"timestamp\", systolic, diastolic, pulse, spo2) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-            &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse, &measurement.spo2],
+            "INSERT INTO beepee.measurements (\"timestamp\", systolic_mmhg, diastolic_mmhg, pulse_bpm, spo2_percent) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            &[&measurement.timestamp, &measurement.systolic_mmhg, &measurement.diastolic_mmhg, &measurement.pulse_bpm, &measurement.spo2_percent],
         )
         .await?;
     let measurement_id: i64 = row.get(0);
@@ -67,8 +67,8 @@ pub(crate) async fn update_blood_pressure_measurement(measurement: &BloodPressur
 
     client
         .execute(
-            "UPDATE beepee.measurements SET \"timestamp\"=$1, systolic=$2, diastolic=$3, pulse=$4, spo2=$5 WHERE id=$6",
-            &[&measurement.timestamp, &measurement.systolic, &measurement.diastolic, &measurement.pulse, &measurement.spo2, &measurement.id],
+            "UPDATE beepee.measurements SET \"timestamp\"=$1, systolic_mmhg=$2, diastolic_mmhg=$3, pulse_bpm=$4, spo2_percent=$5 WHERE id=$6",
+            &[&measurement.timestamp, &measurement.systolic_mmhg, &measurement.diastolic_mmhg, &measurement.pulse_bpm, &measurement.spo2_percent, &measurement.id],
         )
         .await?;
 
@@ -83,7 +83,7 @@ pub(crate) async fn get_recent_blood_pressure_measurements(ago: Duration) -> Res
 
     let rows = client
         .query(
-            "SELECT id, \"timestamp\", systolic, diastolic, pulse, spo2 FROM beepee.measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            "SELECT id, \"timestamp\", systolic_mmhg, diastolic_mmhg, pulse_bpm, spo2_percent FROM beepee.measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
@@ -108,8 +108,8 @@ pub(crate) async fn add_mass_measurement(measurement: &mut BodyMassMeasurement) 
 
     let row = client
         .query_one(
-            "INSERT INTO beepee.mass_measurements (\"timestamp\", mass) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2))) RETURNING id",
-            &[&measurement.timestamp, &measurement.mass.numer(), &measurement.mass.denom()],
+            "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2))) RETURNING id",
+            &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom()],
         )
         .await?;
     let measurement_id: i64 = row.get(0);
@@ -137,8 +137,8 @@ pub(crate) async fn update_mass_measurement(measurement: &BodyMassMeasurement) -
 
     client
         .execute(
-            "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)) WHERE id=$4",
-            &[&measurement.timestamp, &measurement.mass.numer(), &measurement.mass.denom(), &measurement.id],
+            "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)) WHERE id=$4",
+            &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &measurement.id],
         )
         .await?;
 
@@ -164,22 +164,22 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
 
     let rows = client
         .query(
-            "SELECT id, \"timestamp\", mass::character varying(128) FROM beepee.mass_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            "SELECT id, \"timestamp\", mass_kg::character varying(128) FROM beepee.mass_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
     let mut ret = Vec::new();
     for row in rows {
         let mass_string: String = row.get(2);
-        let mass: Rational32 = r32_from_decimal(&mass_string)
+        let mass_kg: Rational32 = r32_from_decimal(&mass_string)
             .expect("parsing mass failed");
         let bmi: Option<Rational32> = square_height_m2.map(|sqh|
-            mass / sqh
+            mass_kg / sqh
         );
         ret.push(BodyMassMeasurement::new(
             row.get(0),
             row.get(1),
-            mass,
+            mass_kg,
             bmi,
         ));
     }

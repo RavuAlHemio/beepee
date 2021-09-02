@@ -13,32 +13,32 @@ use crate::datetime::{milliseconds_since_epoch, milliseconds_since_midnight};
 pub(crate) struct BloodPressureMeasurement {
     pub id: i64,
     pub timestamp: DateTime<Local>,
-    pub systolic: i32,
-    pub diastolic: i32,
-    pub pulse: i32,
-    pub spo2: Option<i32>,
+    pub systolic_mmhg: i32,
+    pub diastolic_mmhg: i32,
+    pub pulse_bpm: i32,
+    pub spo2_percent: Option<i32>,
 }
 impl BloodPressureMeasurement {
     pub fn new(
         id: i64,
         timestamp: DateTime<Local>,
-        systolic: i32,
-        diastolic: i32,
-        pulse: i32,
-        spo2: Option<i32>,
+        systolic_mmhg: i32,
+        diastolic_mmhg: i32,
+        pulse_bpm: i32,
+        spo2_percent: Option<i32>,
     ) -> Self {
         Self {
             id,
             timestamp,
-            systolic,
-            diastolic,
-            pulse,
-            spo2,
+            systolic_mmhg,
+            diastolic_mmhg,
+            pulse_bpm,
+            spo2_percent,
         }
     }
 
     pub fn values_max(&self, other: &Self) -> Self {
-        let spo2 = match (self.spo2, other.spo2) {
+        let spo2_percent = match (self.spo2_percent, other.spo2_percent) {
             (None, None) => None,
             (Some(sv), None) => Some(sv),
             (None, Some(ov)) => Some(ov),
@@ -47,15 +47,15 @@ impl BloodPressureMeasurement {
         Self::new(
             -1,
             self.timestamp.max(other.timestamp),
-            self.systolic.max(other.systolic),
-            self.diastolic.max(other.diastolic),
-            self.pulse.max(other.pulse),
-            spo2,
+            self.systolic_mmhg.max(other.systolic_mmhg),
+            self.diastolic_mmhg.max(other.diastolic_mmhg),
+            self.pulse_bpm.max(other.pulse_bpm),
+            spo2_percent,
         )
     }
 
     pub fn values_min(&self, other: &Self) -> Self {
-        let spo2 = match (self.spo2, other.spo2) {
+        let spo2_percent = match (self.spo2_percent, other.spo2_percent) {
             (None, None) => None,
             (Some(sv), None) => Some(sv),
             (None, Some(ov)) => Some(ov),
@@ -64,10 +64,10 @@ impl BloodPressureMeasurement {
         Self::new(
             -1,
             self.timestamp.min(other.timestamp),
-            self.systolic.min(other.systolic),
-            self.diastolic.min(other.diastolic),
-            self.pulse.min(other.pulse),
-            spo2,
+            self.systolic_mmhg.min(other.systolic_mmhg),
+            self.diastolic_mmhg.min(other.diastolic_mmhg),
+            self.pulse_bpm.min(other.pulse_bpm),
+            spo2_percent,
         )
     }
 
@@ -75,14 +75,14 @@ impl BloodPressureMeasurement {
         assert_ne!(measurements.len(), 0);
         let len_i32: i32 = measurements.len().try_into().unwrap();
 
-        let systolic_sum: i32 = measurements.iter().map(|m| m.systolic).sum();
-        let diastolic_sum: i32 = measurements.iter().map(|m| m.diastolic).sum();
-        let pulse_sum: i32 = measurements.iter().map(|m| m.pulse).sum();
+        let systolic_sum: i32 = measurements.iter().map(|m| m.systolic_mmhg).sum();
+        let diastolic_sum: i32 = measurements.iter().map(|m| m.diastolic_mmhg).sum();
+        let pulse_sum: i32 = measurements.iter().map(|m| m.pulse_bpm).sum();
 
-        let spo2s: Vec<i32> = measurements.iter().filter_map(|m| m.spo2).collect();
+        let spo2s: Vec<i32> = measurements.iter().filter_map(|m| m.spo2_percent).collect();
         let spo2s_sum: i32 = spo2s.iter().sum();
         let spo2s_len_i32: i32 = spo2s.len().try_into().unwrap();
-        let spo2 = if spo2s_len_i32 > 0 {
+        let spo2_percent = if spo2s_len_i32 > 0 {
             Some(spo2s_sum / spo2s_len_i32)
         } else {
             None
@@ -94,7 +94,7 @@ impl BloodPressureMeasurement {
             systolic_sum / len_i32,
             diastolic_sum / len_i32,
             pulse_sum / len_i32,
-            spo2,
+            spo2_percent,
         )
     }
 
@@ -103,16 +103,16 @@ impl BloodPressureMeasurement {
 
         let index = (measurements.len() - 1) * n_num / n_den;
 
-        let mut systolics: Vec<i32> = measurements.iter().map(|m| m.systolic).collect();
+        let mut systolics: Vec<i32> = measurements.iter().map(|m| m.systolic_mmhg).collect();
         systolics.sort_unstable();
 
-        let mut diastolics: Vec<i32> = measurements.iter().map(|m| m.diastolic).collect();
+        let mut diastolics: Vec<i32> = measurements.iter().map(|m| m.diastolic_mmhg).collect();
         diastolics.sort_unstable();
 
-        let mut pulses: Vec<i32> = measurements.iter().map(|m| m.pulse).collect();
+        let mut pulses: Vec<i32> = measurements.iter().map(|m| m.pulse_bpm).collect();
         pulses.sort_unstable();
 
-        let mut spo2s: Vec<i32> = measurements.iter().filter_map(|m| m.spo2).collect();
+        let mut spo2s: Vec<i32> = measurements.iter().filter_map(|m| m.spo2_percent).collect();
         let spo2_index = (spo2s.len() - 1) * n_num / n_den;
         spo2s.sort_unstable();
 
@@ -138,10 +138,10 @@ impl Serialize for BloodPressureMeasurement {
         state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&self.timestamp))?;
         state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&self.timestamp.time()))?;
         state.serialize_field("time", &self.timestamp.format("%H:%M").to_string())?;
-        state.serialize_field("systolic", &self.systolic)?;
-        state.serialize_field("diastolic", &self.diastolic)?;
-        state.serialize_field("pulse", &self.pulse)?;
-        state.serialize_field("spo2", &self.spo2)?;
+        state.serialize_field("systolic_mmhg", &self.systolic_mmhg)?;
+        state.serialize_field("diastolic_mmhg", &self.diastolic_mmhg)?;
+        state.serialize_field("pulse_bpm", &self.pulse_bpm)?;
+        state.serialize_field("spo2_percent", &self.spo2_percent)?;
         state.end()
     }
 }
@@ -182,20 +182,20 @@ impl DailyBloodPressureMeasurements {
 pub(crate) struct BodyMassMeasurement {
     pub id: i64,
     pub timestamp: DateTime<Local>,
-    pub mass: Rational32,
+    pub mass_kg: Rational32,
     pub bmi: Option<Rational32>,
 }
 impl BodyMassMeasurement {
     pub fn new(
         id: i64,
         timestamp: DateTime<Local>,
-        mass: Rational32,
+        mass_kg: Rational32,
         bmi: Option<Rational32>,
     ) -> Self {
         Self {
             id,
             timestamp,
-            mass,
+            mass_kg,
             bmi,
         }
     }
@@ -204,7 +204,7 @@ impl BodyMassMeasurement {
         Self::new(
             -1,
             self.timestamp.max(other.timestamp),
-            self.mass.max(other.mass),
+            self.mass_kg.max(other.mass_kg),
             self.bmi.max(other.bmi),
         )
     }
@@ -213,7 +213,7 @@ impl BodyMassMeasurement {
         Self::new(
             -1,
             self.timestamp.min(other.timestamp),
-            self.mass.min(other.mass),
+            self.mass_kg.min(other.mass_kg),
             self.bmi.max(other.bmi),
         )
     }
@@ -226,7 +226,7 @@ impl BodyMassMeasurement {
         let bmi_len_i32: i32 = measurements.iter().filter(|m| m.bmi.is_some()).count().try_into().unwrap();
         let bmi_len_r32: Rational32 = bmi_len_i32.into();
 
-        let mass_sum: Rational32 = measurements.iter().map(|m| m.mass).sum();
+        let mass_sum: Rational32 = measurements.iter().map(|m| m.mass_kg).sum();
         let bmi_sum: Rational32 = measurements.iter().filter_map(|m| m.bmi).sum();
 
         Self::new(
@@ -240,7 +240,7 @@ impl BodyMassMeasurement {
     pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
         assert_ne!(measurements.len(), 0);
 
-        let mut masses: Vec<Rational32> = measurements.iter().map(|m| m.mass).collect();
+        let mut masses: Vec<Rational32> = measurements.iter().map(|m| m.mass_kg).collect();
         masses.sort_unstable();
 
         let mut bmis: Vec<Rational32> = measurements.iter().filter_map(|m| m.bmi).collect();
@@ -272,7 +272,7 @@ impl Serialize for BodyMassMeasurement {
         state.serialize_field("zoned_timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
         state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&self.timestamp))?;
         state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&self.timestamp.time()))?;
-        state.serialize_field("mass", &self.mass.to_string())?;
+        state.serialize_field("mass_kg", &self.mass_kg.to_string())?;
         state.serialize_field("bmi", &self.bmi.map(|b| b.to_string()))?;
         state.end()
     }

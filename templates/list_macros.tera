@@ -11,22 +11,22 @@
     {% else %}
         <td class="{{ day_part|escape }} time">{{ measurement.time|escape }}</td>
         <td class="{{ day_part|escape }} pressure">
-            <span class="systolic">{{ measurement.systolic }}</span>/<span class="diastolic">{{ measurement.diastolic }}</span>
+            <span class="systolic">{{ measurement.systolic_mmhg }}</span>/<span class="diastolic">{{ measurement.diastolic_mmhg }}</span>
         </td>
-        <td class="{{ day_part|escape }} pulse">{{ measurement.pulse }}</td>
-        <td class="{{ day_part|escape }} spo2">{{ measurement.spo2 }}</td>
+        <td class="{{ day_part|escape }} pulse">{{ measurement.pulse_bpm }}</td>
+        <td class="{{ day_part|escape }} spo2">{{ measurement.spo2_percent }}</td>
     {% endif %}
 {% endmacro %}
 
 
 {% macro output_measurement_minmax_cols(measurement) %}
-    <td class="systolic">{{ measurement.systolic }}</td>
-    <td class="diastolic">{{ measurement.diastolic }}</td>
-    <td class="pulse">{{ measurement.pulse }}</td>
-    <td class="spo2">{{ measurement.spo2 }}</td>
+    <td class="systolic">{{ measurement.systolic_mmhg }}</td>
+    <td class="diastolic">{{ measurement.diastolic_mmhg }}</td>
+    <td class="pulse">{{ measurement.pulse_bpm }}</td>
+    <td class="spo2">{{ measurement.spo2_percent }}</td>
 {% endmacro %}
 
 {% macro output_mass_minmax_cols(measurement) %}
-    <td class="mass">{{ measurement.mass|ratio2float }}</td>
+    <td class="mass">{{ measurement.mass_kg|ratio2float }}</td>
     <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float }}{% endif %}</td>
 {% endmacro %}

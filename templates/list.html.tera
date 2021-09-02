@@ -12,49 +12,49 @@
 BeePee.tsToSystolic = [
     {% for measurement in measurements -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.systolic }} }
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.systolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.tsToDiastolic = [
     {% for measurement in measurements -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.diastolic }} }
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.diastolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.tsToPulse = [
     {% for measurement in measurements -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.pulse }} }
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.pulse_bpm }} }
     {%- endfor %}
 ];
 BeePee.tsToSpo2 = [
     {% for measurement in measurements_with_spo2 -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.spo2 }} }
+        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.spo2_percent }} }
     {%- endfor %}
 ];
 BeePee.todToSystolic = [
     {% for measurement in measurements -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.systolic }} }
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.systolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.todToDiastolic = [
     {% for measurement in measurements -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.diastolic }} }
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.diastolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.todToPulse = [
     {% for measurement in measurements -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.pulse }} }
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.pulse_bpm }} }
     {%- endfor %}
 ];
 BeePee.todToSpo2 = [
     {% for measurement in measurements_with_spo2 -%}
         {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.spo2 }} }
+        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.spo2_percent }} }
     {%- endfor %}
 ];
 BeePee.setUp();
@@ -66,9 +66,9 @@ BeePee.setUp();
     <h1>Blood Pressure</h1>
 
     <form class="input-form" method="post">
-        <div><input type="number" name="systolic" class="systolic" placeholder="systolic mmHg" required="required" /></div>
-        <div><input type="number" name="diastolic" class="diastolic" placeholder="diastolic mmHg" required="required" /></div>
-        <div><input type="number" name="pulse" class="pulse" placeholder="pulse min&#8315;&#185;" required="required" /></div>
+        <div><input type="number" name="systolic_mmhg" class="systolic" placeholder="systolic mmHg" required="required" /></div>
+        <div><input type="number" name="diastolic_mmhg" class="diastolic" placeholder="diastolic mmHg" required="required" /></div>
+        <div><input type="number" name="pulse_bpm" class="pulse" placeholder="pulse min&#8315;&#185;" required="required" /></div>
         <div><input type="number" name="spo2" class="spo2" placeholder="SpO&#8322; %" /></div>
         <div><button type="submit">store</button></div>
     </form>

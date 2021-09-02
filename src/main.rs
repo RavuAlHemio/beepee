@@ -287,7 +287,7 @@ async fn get_index(token_value: &str) -> Result<Response<Body>, Infallible> {
     recent_measurements.sort_by_key(|m| m.timestamp);
 
     let measurements_with_spo2: Vec<BloodPressureMeasurement> = recent_measurements.iter()
-        .filter(|m| m.spo2.is_some())
+        .filter(|m| m.spo2_percent.is_some())
         .map(|m| m.clone())
         .collect();
 
@@ -547,14 +547,14 @@ fn get_req_form_r32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<R
 }
 
 fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BloodPressureMeasurement, ClientError> {
-    let systolic: i32 = get_req_form_i32_gt0(&req_kv, "systolic")?;
-    let diastolic: i32 = get_req_form_i32_gt0(&req_kv, "diastolic")?;
-    let pulse: i32 = get_req_form_i32_gt0(&req_kv, "pulse")?;
-    let spo2: Option<i32> = get_form_i32_gt0(&req_kv, "spo2")?;
+    let systolic_mmhg: i32 = get_req_form_i32_gt0(&req_kv, "systolic_mmhg")?;
+    let diastolic_mmhg: i32 = get_req_form_i32_gt0(&req_kv, "diastolic_mmhg")?;
+    let pulse_bpm: i32 = get_req_form_i32_gt0(&req_kv, "pulse_bpm")?;
+    let spo2_percent: Option<i32> = get_form_i32_gt0(&req_kv, "spo2_percent")?;
 
-    if let Some(sat) = spo2 {
+    if let Some(sat) = spo2_percent {
         if sat > 100 {
-            return Err(ClientError::IntValueTooHigh("spo2".into(), sat, 100));
+            return Err(ClientError::IntValueTooHigh("spo2_percent".into(), sat, 100));
         }
     }
 
@@ -562,16 +562,16 @@ fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BloodPr
     let measurement = BloodPressureMeasurement::new(
         -1,
         local_now,
-        systolic,
-        diastolic,
-        pulse,
-        spo2,
+        systolic_mmhg,
+        diastolic_mmhg,
+        pulse_bpm,
+        spo2_percent,
     );
     Ok(measurement)
 }
 
 async fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BodyMassMeasurement, ClientError> {
-    let mass: Rational32 = get_req_form_r32_gt0(&req_kv, "mass")?;
+    let mass_kg: Rational32 = get_req_form_r32_gt0(&req_kv, "mass_kg")?;
 
     let height_cm: Option<i32> = {
         let config_guard = CONFIG
@@ -584,14 +584,14 @@ async fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Res
     let square_height_m2 = height_m
         .map(|h| h * h);
     let bmi: Option<Rational32> = square_height_m2.map(|sqh|
-        mass / sqh
+        mass_kg / sqh
     );
 
     let local_now = Local::now();
     let measurement = BodyMassMeasurement::new(
         -1,
         local_now,
-        mass,
+        mass_kg,
         bmi,
     );
     Ok(measurement)
