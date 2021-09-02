@@ -669,7 +669,6 @@ fn get_form_r32(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<Ra
 }
 
 fn get_form_r32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<Rational32>, ClientError> {
-    let r32_value = get_form_r32(req_kv, key)?;
     match get_form_r32(req_kv, key)? {
         Some(v) => {
             if v < Zero::zero() {
@@ -781,7 +780,7 @@ async fn post_index(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
 
-    let mut new_measurement = match get_measurement_from_form(&req_kv) {
+    let new_measurement = match get_measurement_from_form(&req_kv) {
         Ok(nm) => nm,
         Err(e) => {
             return respond_400(e).await;
@@ -812,7 +811,7 @@ async fn post_mass(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
 
-    let mut new_measurement = match get_mass_measurement_from_form(&req_kv).await {
+    let new_measurement = match get_mass_measurement_from_form(&req_kv).await {
         Ok(nm) => nm,
         Err(e) => {
             return respond_400(e).await;
