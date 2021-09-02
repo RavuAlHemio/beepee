@@ -34,14 +34,19 @@ use url::Url;
 
 use crate::config::{CONFIG, CONFIG_PATH, load_config};
 use crate::database::{
-    add_blood_pressure_measurement, add_mass_measurement, get_recent_blood_pressure_measurements,
-    get_recent_mass_measurements,
+    add_blood_pressure_measurement, add_mass_measurement, add_temperature_measurement,
+    get_recent_blood_pressure_measurements, get_recent_mass_measurements,
+    get_recent_temperature_measurements, get_temperature_locations,
 };
-use crate::model::{DailyBloodPressureMeasurements, BloodPressureMeasurement, BodyMassMeasurement};
+use crate::model::{
+    DailyBloodPressureMeasurements, BloodPressureMeasurement, BodyMassMeasurement,
+    BodyTemperatureMeasurement,
+};
 use crate::numerism::{ParseRationalError, r32_from_decimal};
 use crate::templating::RatioToFloat;
 
 
+const ABSOLUTE_ZERO_CELSIUS: Lazy<Rational32> = Lazy::new(|| Rational32::new(-27315, 100));
 static TERA: OnceCell<RwLock<Tera>> = OnceCell::new();
 static STATIC_PATH_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^/static/([a-z0-9-._]+)$").unwrap());
 
@@ -96,6 +101,7 @@ pub(crate) enum ClientError {
     IntValueZeroOrLess(String, i32),
     RationalValueZeroOrLess(String, Rational32),
     IntValueTooHigh(String, i32, i32),
+    RationalValueTooLow(String, Rational32, Rational32),
 }
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -112,6 +118,8 @@ impl fmt::Display for ClientError {
                 => write!(f, "value {} for key {:?} is zero or less", value, key),
             ClientError::IntValueTooHigh(key, value, max)
                 => write!(f, "value {} for key {:?} is too high (> {})", value, key, max),
+            ClientError::RationalValueTooLow(key, value, min)
+                => write!(f, "value {} for key {:?} is too low (< {})", value, key, min),
         }
     }
 }
@@ -434,6 +442,74 @@ async fn get_mass(token_value: &str) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
+async fn get_temperature(token_value: &str) -> Result<Response<Body>, Infallible> {
+    let mut recent_measurements = match get_recent_temperature_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+    recent_measurements.sort_by_key(|m| m.timestamp);
+    recent_measurements.reverse();
+
+    let mut max_measurement: Option<BodyTemperatureMeasurement> = None;
+    let mut min_measurement: Option<BodyTemperatureMeasurement> = None;
+    for measurement in &recent_measurements {
+        if let Some(mm) = &mut max_measurement {
+            *mm = mm.values_max(&measurement);
+        } else {
+            max_measurement = Some(measurement.clone());
+        }
+
+        if let Some(mm) = &mut min_measurement {
+            *mm = mm.values_min(&measurement);
+        } else {
+            min_measurement = Some(measurement.clone());
+        }
+    }
+
+    let locations = match get_temperature_locations().await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("error obtaining temperature locations: {}", e);
+            return respond_500();
+        }
+    };
+    let location_id_to_name: HashMap<i64, String> = locations
+        .iter()
+        .map(|loc| (loc.id, loc.name.clone()))
+        .collect();
+
+    let mut context = Context::new();
+    context.insert("token", token_value);
+    context.insert("measurements", &recent_measurements);
+    context.insert("temperature_locations", &locations);
+    context.insert("temperature_location_id_to_name", &location_id_to_name);
+
+    if recent_measurements.len() > 0 {
+        // calculate percentiles
+        let average = BodyTemperatureMeasurement::average(&recent_measurements);
+        let quasi_q1 = BodyTemperatureMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
+        let quasi_q2 = BodyTemperatureMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
+        let quasi_q3 = BodyTemperatureMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
+
+        context.insert("max_measurement", &max_measurement);
+        context.insert("quasi_q3_measurement", &quasi_q3);
+        context.insert("avg_measurement", &average);
+        context.insert("quasi_q2_measurement", &quasi_q2);
+        context.insert("quasi_q1_measurement", &quasi_q1);
+        context.insert("min_measurement", &min_measurement);
+    }
+
+    respond_template(
+        "temperature_list.html.tera",
+        &context,
+        200,
+        &HashMap::new(),
+    ).await
+}
+
 async fn get_api_bp() -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
@@ -502,6 +578,40 @@ async fn get_api_mass() -> Result<Response<Body>, Infallible> {
     }
 }
 
+async fn get_api_temperature() -> Result<Response<Body>, Infallible> {
+    let mut recent_measurements = match get_recent_temperature_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+
+    recent_measurements.sort_by_key(|m| m.timestamp);
+
+    // make it a JSON
+    let recent_json = match serde_json::to_string(&recent_measurements) {
+        Ok(rj) => rj,
+        Err(e) => {
+            error!("error serializing recent measurements to JSON: {}", e);
+            return respond_500();
+        },
+    };
+
+    // spit it out
+    let response_res = Response::builder()
+        .status(200)
+        .header("Content-Type", "application/json")
+        .body(Body::from(recent_json));
+    match response_res {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            error!("failed to create response: {}", e);
+            return respond_500();
+        },
+    }
+}
+
 fn get_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<i32>, ClientError> {
     let string_value = match req_kv.get(key) {
         Some(sv) => sv,
@@ -524,17 +634,53 @@ fn get_req_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<i
     }
 }
 
-fn get_form_r32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<Rational32>, ClientError> {
+fn get_form_i64(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<i64>, ClientError> {
+    let string_value = match req_kv.get(key) {
+        Some(sv) => sv,
+        None => return Ok(None),
+    };
+    let i64_value: i64 = string_value.parse()
+        .map_err(|e| ClientError::FailedToParseIntValue(String::from(key), string_value.clone(), e))?;
+    Ok(Some(i64_value))
+}
+
+fn get_req_form_i64(req_kv: &HashMap<String, String>, key: &str) -> Result<i64, ClientError> {
+    match get_form_i64(req_kv, key) {
+        Ok(Some(i)) => Ok(i),
+        Ok(None) => Err(ClientError::MissingValue(String::from(key))),
+        Err(e) => Err(e),
+    }
+}
+
+fn get_form_r32(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<Rational32>, ClientError> {
     let string_value = match req_kv.get(key) {
         Some(sv) => sv,
         None => return Ok(None),
     };
     let r32_value: Rational32 = r32_from_decimal(string_value)
         .map_err(|e| ClientError::FailedToParseRationalValue(String::from(key), string_value.clone(), e))?;
-    if r32_value < Zero::zero() {
-        Err(ClientError::RationalValueZeroOrLess(String::from(key), r32_value))
-    } else {
-        Ok(Some(r32_value))
+    Ok(Some(r32_value))
+}
+
+fn get_form_r32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<Rational32>, ClientError> {
+    let r32_value = get_form_r32(req_kv, key)?;
+    match get_form_r32(req_kv, key)? {
+        Some(v) => {
+            if v < Zero::zero() {
+                Err(ClientError::RationalValueZeroOrLess(String::from(key), v))
+            } else {
+                Ok(Some(v))
+            }
+        },
+        None => Ok(None),
+    }
+}
+
+fn get_req_form_r32(req_kv: &HashMap<String, String>, key: &str) -> Result<Rational32, ClientError> {
+    match get_form_r32(req_kv, key) {
+        Ok(Some(i)) => Ok(i),
+        Ok(None) => Err(ClientError::MissingValue(String::from(key))),
+        Err(e) => Err(e),
     }
 }
 
@@ -597,6 +743,25 @@ async fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Res
     Ok(measurement)
 }
 
+async fn get_temperature_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BodyTemperatureMeasurement, ClientError> {
+    let location_id: i64 = get_req_form_i64(req_kv, "location")?;
+
+    let temp_celsius: Rational32 = get_req_form_r32(&req_kv, "temperature_celsius")?;
+    if temp_celsius < *ABSOLUTE_ZERO_CELSIUS {
+        // temperature below absolute zero?!
+        return Err(ClientError::RationalValueTooLow("temperature_celsius".into(), temp_celsius, *ABSOLUTE_ZERO_CELSIUS));
+    }
+
+    let local_now = Local::now();
+    let measurement = BodyTemperatureMeasurement::new(
+        -1,
+        local_now,
+        location_id,
+        temp_celsius,
+    );
+    Ok(measurement)
+}
+
 async fn post_index(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let (req_parts, req_body) = req.into_parts();
     let req_body_bytes = match body::to_bytes(req_body).await {
@@ -617,7 +782,7 @@ async fn post_index(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         },
     };
 
-    match add_blood_pressure_measurement(&mut new_measurement).await {
+    match add_blood_pressure_measurement(&new_measurement).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error adding measurement: {}", e);
@@ -648,7 +813,38 @@ async fn post_mass(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         },
     };
 
-    match add_mass_measurement(&mut new_measurement).await {
+    match add_mass_measurement(&new_measurement).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error adding measurement: {}", e);
+            return respond_500();
+        },
+    };
+
+    redirect_to_self(req_parts).await
+}
+
+async fn post_temperature(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    let (req_parts, req_body) = req.into_parts();
+    let req_body_bytes = match body::to_bytes(req_body).await {
+        Ok(rbb) => rbb,
+        Err(e) => {
+            error!("error reading request bytes: {}", e);
+            return respond_500();
+        },
+    }.to_vec();
+    let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+
+    let new_measurement = match get_temperature_measurement_from_form(&req_kv).await {
+        Ok(nm) => nm,
+        Err(e) => {
+            return respond_400(e).await;
+        },
+    };
+
+    match add_temperature_measurement(&new_measurement).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error adding measurement: {}", e);
@@ -760,6 +956,14 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
         } else {
             respond_405(&[Method::GET, Method::POST]).await
         }
+    } else if req.uri().path() == "/temperature" {
+        if req.method() == Method::GET {
+            get_temperature(token_value).await
+        } else if req.method() == Method::POST {
+            post_temperature(req).await
+        } else {
+            respond_405(&[Method::GET, Method::POST]).await
+        }
     } else if req.uri().path() == "/api/bp" {
         if req.method() == Method::GET {
             get_api_bp().await
@@ -769,6 +973,12 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
     } else if req.uri().path() == "/api/mass" {
         if req.method() == Method::GET {
             get_api_mass().await
+        } else {
+            respond_405(&[Method::GET]).await
+        }
+    } else if req.uri().path() == "/api/temperature" {
+        if req.method() == Method::GET {
+            get_api_temperature().await
         } else {
             respond_405(&[Method::GET]).await
         }
@@ -803,6 +1013,7 @@ async fn run() -> Result<(), ServerError> {
         ("list.html.tera", include_str!("../templates/list.html.tera")),
         ("mass_list.html.tera", include_str!("../templates/mass_list.html.tera")),
         ("redirect.html.tera", include_str!("../templates/redirect.html.tera")),
+        ("temperature_list.html.tera", include_str!("../templates/temperature_list.html.tera")),
     ])
         .map_err(|e| ServerError::TemplatingSetup(e))?;
     TERA

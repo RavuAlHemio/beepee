@@ -277,3 +277,108 @@ impl Serialize for BodyMassMeasurement {
         state.end()
     }
 }
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+pub(crate) struct BodyTemperatureLocation {
+    pub id: i64,
+    pub name: String,
+}
+impl BodyTemperatureLocation {
+    pub fn new(
+        id: i64,
+        name: String,
+    ) -> Self {
+        Self {
+            id,
+            name,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct BodyTemperatureMeasurement {
+    pub id: i64,
+    pub timestamp: DateTime<Local>,
+    pub location_id: i64,
+    pub temperature_celsius: Rational32,
+}
+impl BodyTemperatureMeasurement {
+    pub fn new(
+        id: i64,
+        timestamp: DateTime<Local>,
+        location_id: i64,
+        temperature_celsius: Rational32,
+    ) -> Self {
+        Self {
+            id,
+            timestamp,
+            location_id,
+            temperature_celsius,
+        }
+    }
+
+    pub fn values_max(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.max(other.timestamp),
+            self.location_id.max(other.location_id),
+            self.temperature_celsius.max(other.temperature_celsius),
+        )
+    }
+
+    pub fn values_min(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.min(other.timestamp),
+            self.location_id.min(other.location_id),
+            self.temperature_celsius.max(other.temperature_celsius),
+        )
+    }
+
+    pub fn average(measurements: &[Self]) -> Self {
+        assert_ne!(measurements.len(), 0);
+        let len_i32: i32 = measurements.len().try_into().unwrap();
+        let len_r32: Rational32 = len_i32.into();
+
+        let temperature_celsius_sum: Rational32 = measurements.iter().map(|m| m.temperature_celsius).sum();
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            measurements[0].location_id,
+            temperature_celsius_sum / len_r32,
+        )
+    }
+
+    pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
+        assert_ne!(measurements.len(), 0);
+
+        let mut temperatures: Vec<Rational32> = measurements.iter().map(|m| m.temperature_celsius).collect();
+        temperatures.sort_unstable();
+
+        let index = (measurements.len() - 1) * n_num / n_den;
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            measurements[0].location_id,
+            temperatures[index],
+        )
+    }
+}
+impl Serialize for BodyTemperatureMeasurement {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct(
+            stringify!(BodyTemperatureMeasurement),
+            7,
+        )?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
+        state.serialize_field("zoned_timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
+        state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&self.timestamp))?;
+        state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&self.timestamp.time()))?;
+        state.serialize_field("location_id", &self.location_id.to_string())?;
+        state.serialize_field("temperature_celsius", &self.temperature_celsius.to_string())?;
+        state.end()
+    }
+}

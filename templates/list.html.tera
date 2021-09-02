@@ -147,6 +147,6 @@ BeePee.setUp();
         <canvas id="tod-chart-canvas"></canvas>
     </div>
 
-    <p><a href="mass?token={{ token|urlencode|escape }}">body mass</a></p>
+    <p><a href="mass?token={{ token|urlencode|escape }}">body mass</a> &middot; <a href="temperature?token={{ token|urlencode|escape }}">body temperature</a></p>
 
 {% endblock %}

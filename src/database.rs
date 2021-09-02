@@ -5,7 +5,10 @@ use tokio;
 use tokio_postgres::{self, Client, NoTls};
 
 use crate::config::CONFIG;
-use crate::model::{BloodPressureMeasurement, BodyMassMeasurement};
+use crate::model::{
+    BloodPressureMeasurement, BodyMassMeasurement, BodyTemperatureLocation,
+    BodyTemperatureMeasurement,
+};
 use crate::numerism::r32_from_decimal;
 
 
@@ -32,7 +35,7 @@ async fn connect() -> Result<Client, tokio_postgres::Error> {
     Ok(client)
 }
 
-pub(crate) async fn add_blood_pressure_measurement(measurement: &mut BloodPressureMeasurement) -> Result<i64, tokio_postgres::Error> {
+pub(crate) async fn add_blood_pressure_measurement(measurement: &BloodPressureMeasurement) -> Result<i64, tokio_postgres::Error> {
     let client = connect()
         .await?;
 
@@ -102,7 +105,7 @@ pub(crate) async fn get_recent_blood_pressure_measurements(ago: Duration) -> Res
     Ok(ret)
 }
 
-pub(crate) async fn add_mass_measurement(measurement: &mut BodyMassMeasurement) -> Result<i64, tokio_postgres::Error> {
+pub(crate) async fn add_mass_measurement(measurement: &BodyMassMeasurement) -> Result<i64, tokio_postgres::Error> {
     let client = connect()
         .await?;
 
@@ -181,6 +184,141 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
             row.get(1),
             mass_kg,
             bmi,
+        ));
+    }
+
+    Ok(ret)
+}
+
+pub(crate) async fn add_temperature_location(loc: &BodyTemperatureLocation) -> Result<i64, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let row = client
+        .query_one(
+            "INSERT INTO beepee.body_temperature_locations (\"name\") VALUES ($1) RETURNING id",
+            &[&loc.name],
+        )
+        .await?;
+    let loc_id: i64 = row.get(0);
+
+    Ok(loc_id)
+}
+
+pub(crate) async fn remove_temperature_location(loc_id: i64) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "DELETE FROM beepee.body_temperature_locations WHERE id = $1",
+            &[&loc_id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn update_temperature_location(loc: &BodyTemperatureLocation) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "UPDATE beepee.body_temperature_locations SET \"name\"=$1 WHERE id=$2",
+            &[&loc.name, &loc.id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn get_temperature_locations() -> Result<Vec<BodyTemperatureLocation>, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let rows = client
+        .query(
+            "SELECT id, \"name\" FROM beepee.body_temperature_locations ORDER BY \"name\"",
+            &[],
+        )
+        .await?;
+    let mut ret = Vec::new();
+    for row in rows {
+        ret.push(BodyTemperatureLocation::new(
+            row.get(0),
+            row.get(1),
+        ));
+    }
+
+    Ok(ret)
+}
+
+pub(crate) async fn add_temperature_measurement(measurement: &BodyTemperatureMeasurement) -> Result<i64, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let row = client
+        .query_one(
+            "INSERT INTO beepee.body_temperature_measurements (\"timestamp\", location_id, temperature_celsius) VALUES ($1, $2, ($3::int::numeric(6, 2) / $4::int::numeric(6, 2))) RETURNING id",
+            &[&measurement.timestamp, &measurement.location_id, &measurement.temperature_celsius.numer(), &measurement.temperature_celsius.denom()],
+        )
+        .await?;
+    let measurement_id: i64 = row.get(0);
+
+    Ok(measurement_id)
+}
+
+pub(crate) async fn remove_temperature_measurement(measurement_id: i64) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "DELETE FROM beepee.body_temperature_measurements WHERE id = $1",
+            &[&measurement_id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn update_temperature_measurement(measurement: &BodyTemperatureMeasurement) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "UPDATE beepee.body_temperature_measurements SET \"timestamp\"=$1, location_id=$2, temperature_celsius=($3::int::numeric(6, 2) / $4::int::numeric(6, 2)) WHERE id=$5",
+            &[&measurement.timestamp, &measurement.location_id, &measurement.temperature_celsius.numer(), &measurement.temperature_celsius.denom(), &measurement.id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn get_recent_temperature_measurements(ago: Duration) -> Result<Vec<BodyTemperatureMeasurement>, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let start_time = Local::now() - ago;
+
+    let rows = client
+        .query(
+            "SELECT id, \"timestamp\", location_id, temperature_celsius::character varying(128) FROM beepee.body_temperature_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            &[&start_time],
+        )
+        .await?;
+    let mut ret = Vec::new();
+    for row in rows {
+        let temperature_string: String = row.get(3);
+        let temperature_celsius: Rational32 = r32_from_decimal(&temperature_string)
+            .expect("parsing temperature failed");
+        ret.push(BodyTemperatureMeasurement::new(
+            row.get(0),
+            row.get(1),
+            row.get(2),
+            temperature_celsius,
         ));
     }
 

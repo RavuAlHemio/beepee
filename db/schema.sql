@@ -20,3 +20,23 @@ CREATE TABLE beepee.mass_measurements
 , CONSTRAINT mass_measurements_pkey PRIMARY KEY (id)
 , CONSTRAINT mass_measurements_check CHECK (mass_kg >= 0)
 );
+
+CREATE SEQUENCE beepee.body_temperature_locations_id_seq AS bigint START WITH 1;
+
+CREATE TABLE beepee.body_temperature_locations
+( id bigint NOT NULL DEFAULT nextval('beepee.body_temperature_locations_id_seq')
+, "name" varchar(256) NOT NULL
+, CONSTRAINT body_temperature_locations_pkey PRIMARY KEY (id)
+);
+
+CREATE SEQUENCE beepee.body_temperature_measurements_id_seq AS bigint START WITH 1;
+
+CREATE TABLE beepee.body_temperature_measurements
+( id bigint NOT NULL DEFAULT nextval('beepee.body_temperature_measurements_id_seq')
+, "timestamp" timestamp with time zone NOT NULL
+, location_id bigint NOT NULL
+, temperature_celsius numeric(6, 2) NOT NULL
+, CONSTRAINT body_temperature_measurements_pkey PRIMARY KEY (id)
+, CONSTRAINT body_temperature_measurements_check CHECK (temperature_celsius >= -273.15)
+, CONSTRAINT body_temperature_measurements_location_id_fkey FOREIGN KEY (location_id) REFERENCES beepee.body_temperature_locations (id)
+);

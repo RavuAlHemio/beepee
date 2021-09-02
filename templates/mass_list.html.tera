@@ -67,6 +67,6 @@
 
     <p>mass in kg</p>
 
-    <p><a href="./?token={{ token|urlencode|escape }}">blood pressure</a></p>
+    <p><a href="./?token={{ token|urlencode|escape }}">blood pressure</a> &middot; <a href="temperature?token={{ token|urlencode|escape }}">body temperature</a></p>
 
 {% endblock %}
