@@ -32,6 +32,7 @@ pub(crate) struct Config {
     pub base_url: String,
     pub hours: Hours,
     pub height_cm: Option<i32>,
+    pub default_temperature_location_id: i64,
 }
 
 pub(crate) async fn load_config() -> Result<(), ServerError> {

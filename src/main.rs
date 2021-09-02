@@ -486,6 +486,12 @@ async fn get_temperature(token_value: &str) -> Result<Response<Body>, Infallible
     context.insert("measurements", &recent_measurements);
     context.insert("temperature_locations", &locations);
     context.insert("temperature_location_id_to_name", &location_id_to_name);
+    {
+        let config = CONFIG
+            .get().unwrap()
+            .read().await;
+        context.insert("default_temperature_location_id", &config.default_temperature_location_id);
+    }
 
     if recent_measurements.len() > 0 {
         // calculate percentiles
