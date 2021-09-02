@@ -34,7 +34,7 @@
                 <tr>
                     <td class="timestamp">{{ measurement.timestamp|escape }}</td>
                     <td class="location">{{ temperature_location_id_to_name[measurement.location_id]|escape }}</td>
-                    <td class="temperature">{{ measurement.temperature|ratio2float }}</td>
+                    <td class="temperature">{{ measurement.temperature_celsius|ratio2float }}</td>
                 </tr>
             {% endfor %}
         </tbody>
