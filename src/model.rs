@@ -214,7 +214,7 @@ impl BodyMassMeasurement {
             -1,
             self.timestamp.min(other.timestamp),
             self.mass_kg.min(other.mass_kg),
-            self.bmi.max(other.bmi),
+            self.bmi.min(other.bmi),
         )
     }
 
