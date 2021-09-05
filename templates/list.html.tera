@@ -65,6 +65,7 @@ BeePee.setUp();
 
     <h1>Blood Pressure</h1>
 
+    {% if token.write %}
     <form class="input-form" method="post">
         <div><input type="number" name="systolic_mmhg" class="systolic" placeholder="systolic mmHg" required="required" /></div>
         <div><input type="number" name="diastolic_mmhg" class="diastolic" placeholder="diastolic mmHg" required="required" /></div>
@@ -72,6 +73,7 @@ BeePee.setUp();
         <div><input type="number" name="spo2_percent" class="spo2" placeholder="SpO&#8322; %" /></div>
         <div><button type="submit">store</button></div>
     </form>
+    {% endif %}
 
     <table class="last-measurements">
         <thead>
@@ -147,6 +149,6 @@ BeePee.setUp();
         <canvas id="tod-chart-canvas"></canvas>
     </div>
 
-    <p><a href="mass?token={{ token|urlencode|escape }}">body mass</a> &middot; <a href="temperature?token={{ token|urlencode|escape }}">body temperature</a></p>
+    {{ list_macros::output_links(current_page="bp") }}
 
 {% endblock %}

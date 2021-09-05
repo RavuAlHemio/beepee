@@ -25,15 +25,23 @@ pub(crate) struct Hours {
 
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub(crate) struct AuthToken {
+    pub token: String,
+    pub write: bool,
+}
+
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub(crate) struct Config {
     pub db_conn_string: String,
     pub http_listen: String,
-    pub auth_tokens: Vec<String>,
+    pub auth_tokens: Vec<AuthToken>,
     pub base_url: String,
     pub hours: Hours,
     pub height_cm: Option<i32>,
     pub default_temperature_location_id: i64,
 }
+
 
 pub(crate) async fn load_config() -> Result<(), ServerError> {
     let path = CONFIG_PATH

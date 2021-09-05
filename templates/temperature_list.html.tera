@@ -7,6 +7,7 @@
 
     <h1>Temperature</h1>
 
+    {% if token.write %}
     <form class="input-form" method="post">
         <div><input type="number" name="temperature_celsius" class="temperature" placeholder="temperature °C" min="0.0" step="0.1" required="required" /></div>
         <div><select name="location">
@@ -20,6 +21,7 @@
         </select></div>
         <div><button type="submit">store</button></div>
     </form>
+    {% endif %}
 
     <table class="last-measurements">
         <thead>
@@ -75,6 +77,6 @@
 
     <p>temperature in °C</p>
 
-    <p><a href="./?token={{ token|urlencode|escape }}">blood pressure</a> &middot; <a href="mass?token={{ token|urlencode|escape }}">body mass</a></p>
+    {{ list_macros::output_links(current_page="temperature") }}
 
 {% endblock %}

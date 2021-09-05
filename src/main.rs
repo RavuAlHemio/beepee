@@ -32,7 +32,7 @@ use tokio::sync::RwLock;
 use toml;
 use url::Url;
 
-use crate::config::{CONFIG, CONFIG_PATH, load_config};
+use crate::config::{AuthToken, CONFIG, CONFIG_PATH, load_config};
 use crate::database::{
     add_blood_pressure_measurement, add_mass_measurement, add_temperature_measurement,
     get_recent_blood_pressure_measurements, get_recent_mass_measurements,
@@ -215,6 +215,20 @@ async fn respond_403() -> Result<Response<Body>, Infallible> {
     ).await
 }
 
+async fn respond_403_ro() -> Result<Response<Body>, Infallible> {
+    let mut headers = HashMap::new();
+    headers.insert(
+        "Forbidden-Reason".to_owned(),
+        "token-read-only".to_owned(),
+    );
+    respond_template(
+        "403_ro.html.tera",
+        &Context::new(),
+        403,
+        &headers,
+    ).await
+}
+
 async fn respond_404() -> Result<Response<Body>, Infallible> {
     respond_template(
         "404.html.tera",
@@ -284,7 +298,7 @@ async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_index(token_value: &str) -> Result<Response<Body>, Infallible> {
+async fn get_index(token: &AuthToken) -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -360,7 +374,7 @@ async fn get_index(token_value: &str) -> Result<Response<Body>, Infallible> {
         .collect();
 
     let mut context = Context::new();
-    context.insert("token", token_value);
+    context.insert("token", &token);
     context.insert("measurements", &recent_measurements);
     context.insert("measurements_with_spo2", &measurements_with_spo2);
     context.insert("days_and_measurements", &days_and_measurements);
@@ -388,7 +402,7 @@ async fn get_index(token_value: &str) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_mass(token_value: &str) -> Result<Response<Body>, Infallible> {
+async fn get_mass(token: &AuthToken) -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_mass_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -416,7 +430,7 @@ async fn get_mass(token_value: &str) -> Result<Response<Body>, Infallible> {
     }
 
     let mut context = Context::new();
-    context.insert("token", token_value);
+    context.insert("token", &token);
     context.insert("measurements", &recent_measurements);
 
     if recent_measurements.len() > 0 {
@@ -442,7 +456,7 @@ async fn get_mass(token_value: &str) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_temperature(token_value: &str) -> Result<Response<Body>, Infallible> {
+async fn get_temperature(token: &AuthToken) -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_temperature_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -482,7 +496,7 @@ async fn get_temperature(token_value: &str) -> Result<Response<Body>, Infallible
         .collect();
 
     let mut context = Context::new();
-    context.insert("token", token_value);
+    context.insert("token", &token);
     context.insert("measurements", &recent_measurements);
     context.insert("temperature_locations", &locations);
     context.insert("temperature_location_id_to_name", &location_id_to_name);
@@ -767,7 +781,11 @@ async fn get_temperature_measurement_from_form(req_kv: &HashMap<String, String>)
     Ok(measurement)
 }
 
-async fn post_index(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn post_index(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+    if !token.write {
+        return respond_403_ro().await;
+    }
+
     let (req_parts, req_body) = req.into_parts();
     let req_body_bytes = match body::to_bytes(req_body).await {
         Ok(rbb) => rbb,
@@ -798,7 +816,11 @@ async fn post_index(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     redirect_to_self(req_parts).await
 }
 
-async fn post_mass(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn post_mass(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+    if !token.write {
+        return respond_403_ro().await;
+    }
+
     let (req_parts, req_body) = req.into_parts();
     let req_body_bytes = match body::to_bytes(req_body).await {
         Ok(rbb) => rbb,
@@ -829,7 +851,11 @@ async fn post_mass(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     redirect_to_self(req_parts).await
 }
 
-async fn post_temperature(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn post_temperature(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+    if !token.write {
+        return respond_403_ro().await;
+    }
+
     let (req_parts, req_body) = req.into_parts();
     let req_body_bytes = match body::to_bytes(req_body).await {
         Ok(rbb) => rbb,
@@ -931,41 +957,47 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
         Some(tv) => tv,
     };
 
-    let token_matches = {
+    let token_opt = {
         CONFIG
             .get().expect("config is set")
             .read().await
             .auth_tokens
             .iter()
-            .any(|t| t == token_value)
+            .filter(|t| &t.token == token_value)
+            .map(|t| t.clone())
+            .nth(0)
     };
-    if !token_matches {
-        return respond_403().await;
-    }
+    let token = match token_opt {
+        Some(t) => t,
+        None => {
+            // no such token found, at all
+            return respond_403().await;
+        },
+    };
 
     // authenticated-only endpoints beyond this line
 
     if req.uri().path() == "/" {
         if req.method() == Method::GET {
-            get_index(token_value).await
+            get_index(&token).await
         } else if req.method() == Method::POST {
-            post_index(req).await
+            post_index(req, &token).await
         } else {
             respond_405(&[Method::GET, Method::POST]).await
         }
     } else if req.uri().path() == "/mass" {
         if req.method() == Method::GET {
-            get_mass(token_value).await
+            get_mass(&token).await
         } else if req.method() == Method::POST {
-            post_mass(req).await
+            post_mass(req, &token).await
         } else {
             respond_405(&[Method::GET, Method::POST]).await
         }
     } else if req.uri().path() == "/temperature" {
         if req.method() == Method::GET {
-            get_temperature(token_value).await
+            get_temperature(&token).await
         } else if req.method() == Method::POST {
-            post_temperature(req).await
+            post_temperature(req, &token).await
         } else {
             respond_405(&[Method::GET, Method::POST]).await
         }
@@ -1011,6 +1043,7 @@ async fn run() -> Result<(), ServerError> {
     tera.add_raw_templates(vec![
         ("400.html.tera", include_str!("../templates/400.html.tera")),
         ("403.html.tera", include_str!("../templates/403.html.tera")),
+        ("403_ro.html.tera", include_str!("../templates/403_ro.html.tera")),
         ("404.html.tera", include_str!("../templates/404.html.tera")),
         ("405.html.tera", include_str!("../templates/405.html.tera")),
         ("base.html.tera", include_str!("../templates/base.html.tera")),

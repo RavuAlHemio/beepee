@@ -34,3 +34,25 @@
 {% macro output_temperature_minmax_cols(measurement) %}
     <td class="temperature">{{ measurement.temperature_celsius|ratio2float }}</td>
 {% endmacro %}
+
+{% macro output_links(current_page) %}
+    <p class="link-bar">
+        {% if current_page == "bp" %}
+            <strong class="current-page bp">blood pressure</strong>
+        {% else %}
+            <a class="page-link bp" href="./?token={{ token.token|urlencode|escape }}">blood pressure</a>
+        {% endif %}
+        &middot;
+        {% if current_page == "mass" %}
+            <strong class="current-page mass">body mass</strong>
+        {% else %}
+            <a class="page-link mass" href="mass?token={{ token.token|urlencode|escape }}">body mass</a>
+        {% endif %}
+        &middot;
+        {% if current_page == "temperature" %}
+            <strong class="current-page temperature">body temperature</strong>
+        {% else %}
+            <a class="page-link temperature" href="temperature?token={{ token.token|urlencode|escape }}">body temperature</a>
+        {% endif %}
+    </p>
+{% endmacro %}
