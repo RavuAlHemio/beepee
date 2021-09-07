@@ -30,8 +30,8 @@
             {% for measurement in measurements %}
                 <tr>
                     <td class="timestamp">{{ measurement.timestamp|escape }}</td>
-                    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float }}</td>
-                    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl|ratio2float }}</td>
+                    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float(digits=1) }}</td>
+                    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl|ratio2float(digits=0) }}</td>
                 </tr>
             {% endfor %}
         </tbody>
