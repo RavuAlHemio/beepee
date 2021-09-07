@@ -35,6 +35,11 @@
     <td class="temperature">{{ measurement.temperature_celsius|ratio2float }}</td>
 {% endmacro %}
 
+{% macro output_sugar_minmax_cols(measurement) %}
+    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float }}</td>
+    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl|ratio2float }}</td>
+{% endmacro %}
+
 {% macro output_links(current_page) %}
     <p class="link-bar">
         {% if current_page == "bp" %}
@@ -53,6 +58,12 @@
             <strong class="current-page temperature">body temperature</strong>
         {% else %}
             <a class="page-link temperature" href="temperature?token={{ token.token|urlencode|escape }}">body temperature</a>
+        {% endif %}
+        &middot;
+        {% if current_page == "sugar" %}
+            <strong class="current-page sugar">blood sugar</strong>
+        {% else %}
+            <a class="page-link sugar" href="sugar?token={{ token.token|urlencode|escape }}">blood sugar</a>
         {% endif %}
     </p>
 {% endmacro %}

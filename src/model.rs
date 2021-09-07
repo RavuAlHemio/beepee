@@ -373,6 +373,98 @@ impl Serialize for BodyTemperatureMeasurement {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct BloodSugarMeasurement {
+    pub id: i64,
+    pub timestamp: DateTime<Local>,
+    pub sugar_mmol_per_l: Rational32,
+}
+impl BloodSugarMeasurement {
+    pub fn new(
+        id: i64,
+        timestamp: DateTime<Local>,
+        sugar_mmol_per_l: Rational32,
+    ) -> Self {
+        Self {
+            id,
+            timestamp,
+            sugar_mmol_per_l,
+        }
+    }
+
+    pub fn new_mg_per_dl(
+        id: i64,
+        timestamp: DateTime<Local>,
+        sugar_mg_per_dl: Rational32,
+    ) -> Self {
+        let sugar_mmol_per_l = &sugar_mg_per_dl / 16;
+        Self::new(
+            id,
+            timestamp,
+            sugar_mmol_per_l,
+        )
+    }
+
+    pub fn values_max(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.max(other.timestamp),
+            self.sugar_mmol_per_l.max(other.sugar_mmol_per_l),
+        )
+    }
+
+    pub fn values_min(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.min(other.timestamp),
+            self.sugar_mmol_per_l.min(other.sugar_mmol_per_l),
+        )
+    }
+
+    pub fn average(measurements: &[Self]) -> Self {
+        assert_ne!(measurements.len(), 0);
+        let len_i32: i32 = measurements.len().try_into().unwrap();
+        let len_r32: Rational32 = len_i32.into();
+
+        let sugar_mmol_per_l_sum: Rational32 = measurements.iter().map(|m| m.sugar_mmol_per_l).sum();
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            sugar_mmol_per_l_sum / len_r32,
+        )
+    }
+
+    pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
+        assert_ne!(measurements.len(), 0);
+
+        let mut sugars_mmol_per_l: Vec<Rational32> = measurements.iter().map(|m| m.sugar_mmol_per_l).collect();
+        sugars_mmol_per_l.sort_unstable();
+
+        let index = (measurements.len() - 1) * n_num / n_den;
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            sugars_mmol_per_l[index],
+        )
+    }
+}
+impl Serialize for BloodSugarMeasurement {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct(
+            stringify!(BloodSugarMeasurement),
+            8,
+        )?;
+        let sugar_mg_per_dl = &self.sugar_mmol_per_l * 18;
+        state.serialize_field("id", &self.id)?;
+        serialize_timestamp(&self.timestamp, &mut state)?;
+        state.serialize_field("sugar_mmol_per_l", &self.sugar_mmol_per_l.to_string())?;
+        state.serialize_field("sugar_mg_per_dl", &sugar_mg_per_dl.to_string())?;
+        state.end()
+    }
+}
+
 
 fn serialize_timestamp<S: SerializeStruct>(timestamp: &DateTime<Local>, state: &mut S) -> Result<(), S::Error> {
     state.serialize_field("timestamp", &timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;

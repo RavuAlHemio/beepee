@@ -6,7 +6,7 @@ use tokio_postgres::{self, Client, NoTls};
 
 use crate::config::CONFIG;
 use crate::model::{
-    BloodPressureMeasurement, BodyMassMeasurement, BodyTemperatureLocation,
+    BloodPressureMeasurement, BloodSugarMeasurement, BodyMassMeasurement, BodyTemperatureLocation,
     BodyTemperatureMeasurement,
 };
 use crate::numerism::r32_from_decimal;
@@ -318,6 +318,76 @@ pub(crate) async fn get_recent_temperature_measurements(ago: Duration) -> Result
             row.get(0),
             row.get(1),
             row.get(2),
+            temperature_celsius,
+        ));
+    }
+
+    Ok(ret)
+}
+
+pub(crate) async fn add_blood_sugar_measurement(measurement: &BloodSugarMeasurement) -> Result<i64, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let row = client
+        .query_one(
+            "INSERT INTO beepee.blood_sugar_measurements (\"timestamp\", sugar_mmol_per_l) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2))) RETURNING id",
+            &[&measurement.timestamp, &measurement.sugar_mmol_per_l.numer(), &measurement.sugar_mmol_per_l.denom()],
+        )
+        .await?;
+    let measurement_id: i64 = row.get(0);
+
+    Ok(measurement_id)
+}
+
+pub(crate) async fn remove_blood_sugar_measurement(measurement_id: i64) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "DELETE FROM beepee.blood_sugar_measurements WHERE id = $1",
+            &[&measurement_id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn update_blood_sugar_measurement(measurement: &BloodSugarMeasurement) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "UPDATE beepee.blood_sugar_measurements SET \"timestamp\"=$1, sugar_mmol_per_l=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)) WHERE id=$4",
+            &[&measurement.timestamp, &measurement.sugar_mmol_per_l.numer(), &measurement.sugar_mmol_per_l.denom(), &measurement.id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn get_recent_blood_sugar_measurements(ago: Duration) -> Result<Vec<BloodSugarMeasurement>, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let start_time = Local::now() - ago;
+
+    let rows = client
+        .query(
+            "SELECT id, \"timestamp\", sugar_mmol_per_l::character varying(128) FROM beepee.blood_sugar_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            &[&start_time],
+        )
+        .await?;
+    let mut ret = Vec::new();
+    for row in rows {
+        let temperature_string: String = row.get(2);
+        let temperature_celsius: Rational32 = r32_from_decimal(&temperature_string)
+            .expect("parsing temperature failed");
+        ret.push(BloodSugarMeasurement::new(
+            row.get(0),
+            row.get(1),
             temperature_celsius,
         ));
     }

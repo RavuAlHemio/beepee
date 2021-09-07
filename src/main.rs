@@ -34,13 +34,14 @@ use url::Url;
 
 use crate::config::{AuthToken, CONFIG, CONFIG_PATH, load_config};
 use crate::database::{
-    add_blood_pressure_measurement, add_mass_measurement, add_temperature_measurement,
-    get_recent_blood_pressure_measurements, get_recent_mass_measurements,
+    add_blood_pressure_measurement, add_blood_sugar_measurement, add_mass_measurement,
+    add_temperature_measurement, get_recent_blood_pressure_measurements,
+    get_recent_blood_sugar_measurements, get_recent_mass_measurements,
     get_recent_temperature_measurements, get_temperature_locations,
 };
 use crate::model::{
-    DailyBloodPressureMeasurements, BloodPressureMeasurement, BodyMassMeasurement,
-    BodyTemperatureMeasurement,
+    DailyBloodPressureMeasurements, BloodPressureMeasurement, BloodSugarMeasurement,
+    BodyMassMeasurement, BodyTemperatureMeasurement,
 };
 use crate::numerism::{ParseRationalError, r32_from_decimal};
 use crate::templating::RatioToFloat;
@@ -102,6 +103,7 @@ pub(crate) enum ClientError {
     RationalValueZeroOrLess(String, Rational32),
     IntValueTooHigh(String, i32, i32),
     RationalValueTooLow(String, Rational32, Rational32),
+    ValueIsInvalidOption(String, String, Vec<String>),
 }
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -120,6 +122,8 @@ impl fmt::Display for ClientError {
                 => write!(f, "value {} for key {:?} is too high (> {})", value, key, max),
             ClientError::RationalValueTooLow(key, value, min)
                 => write!(f, "value {} for key {:?} is too low (< {})", value, key, min),
+            ClientError::ValueIsInvalidOption(key, value, valid_options)
+                => write!(f, "value {} for key {:?} is not a valid option; valid options are {:?}", value, key, valid_options),
         }
     }
 }
@@ -530,6 +534,60 @@ async fn get_temperature(token: &AuthToken) -> Result<Response<Body>, Infallible
     ).await
 }
 
+async fn get_sugar(token: &AuthToken) -> Result<Response<Body>, Infallible> {
+    let mut recent_measurements = match get_recent_blood_sugar_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+    recent_measurements.sort_by_key(|m| m.timestamp);
+    recent_measurements.reverse();
+
+    let mut max_measurement: Option<BloodSugarMeasurement> = None;
+    let mut min_measurement: Option<BloodSugarMeasurement> = None;
+    for measurement in &recent_measurements {
+        if let Some(mm) = &mut max_measurement {
+            *mm = mm.values_max(&measurement);
+        } else {
+            max_measurement = Some(measurement.clone());
+        }
+
+        if let Some(mm) = &mut min_measurement {
+            *mm = mm.values_min(&measurement);
+        } else {
+            min_measurement = Some(measurement.clone());
+        }
+    }
+
+    let mut context = Context::new();
+    context.insert("token", &token);
+    context.insert("measurements", &recent_measurements);
+
+    if recent_measurements.len() > 0 {
+        // calculate percentiles
+        let average = BloodSugarMeasurement::average(&recent_measurements);
+        let quasi_q1 = BloodSugarMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
+        let quasi_q2 = BloodSugarMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
+        let quasi_q3 = BloodSugarMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
+
+        context.insert("max_measurement", &max_measurement);
+        context.insert("quasi_q3_measurement", &quasi_q3);
+        context.insert("avg_measurement", &average);
+        context.insert("quasi_q2_measurement", &quasi_q2);
+        context.insert("quasi_q1_measurement", &quasi_q1);
+        context.insert("min_measurement", &min_measurement);
+    }
+
+    respond_template(
+        "sugar_list.html.tera",
+        &context,
+        200,
+        &HashMap::new(),
+    ).await
+}
+
 async fn get_api_bp() -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
@@ -600,6 +658,40 @@ async fn get_api_mass() -> Result<Response<Body>, Infallible> {
 
 async fn get_api_temperature() -> Result<Response<Body>, Infallible> {
     let mut recent_measurements = match get_recent_temperature_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+
+    recent_measurements.sort_by_key(|m| m.timestamp);
+
+    // make it a JSON
+    let recent_json = match serde_json::to_string(&recent_measurements) {
+        Ok(rj) => rj,
+        Err(e) => {
+            error!("error serializing recent measurements to JSON: {}", e);
+            return respond_500();
+        },
+    };
+
+    // spit it out
+    let response_res = Response::builder()
+        .status(200)
+        .header("Content-Type", "application/json")
+        .body(Body::from(recent_json));
+    match response_res {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            error!("failed to create response: {}", e);
+            return respond_500();
+        },
+    }
+}
+
+async fn get_api_sugar() -> Result<Response<Body>, Infallible> {
+    let mut recent_measurements = match get_recent_blood_sugar_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error obtaining recent measurements: {}", e);
@@ -781,6 +873,35 @@ async fn get_temperature_measurement_from_form(req_kv: &HashMap<String, String>)
     Ok(measurement)
 }
 
+async fn get_sugar_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BloodSugarMeasurement, ClientError> {
+    let unit_key = match req_kv.get("sugar_unit_key") {
+        Some(uk) => uk,
+        None => return Err(ClientError::MissingValue("sugar_unit_key".to_owned())),
+    };
+    let factor_to_mmol_per_l = if unit_key == "mmol-per-l" {
+        Rational32::new(1, 1)
+    } else if unit_key == "mg-per-dl" {
+        Rational32::new(1, 18)
+    } else {
+        return Err(ClientError::ValueIsInvalidOption(
+            "sugar_unit_key".to_owned(),
+            unit_key.clone(),
+            vec!["mmol-per-l".to_owned(), "mg-per-dl".to_owned()],
+        ));
+    };
+
+    let sugar_value: Rational32 = get_req_form_r32_gt0(&req_kv, "sugar_value")?;
+    let sugar_mmol_per_l: Rational32 = sugar_value * factor_to_mmol_per_l;
+
+    let local_now = Local::now();
+    let measurement = BloodSugarMeasurement::new(
+        -1,
+        local_now,
+        sugar_mmol_per_l,
+    );
+    Ok(measurement)
+}
+
 async fn post_index(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
     if !token.write {
         return respond_403_ro().await;
@@ -876,6 +997,41 @@ async fn post_temperature(req: Request<Body>, token: &AuthToken) -> Result<Respo
     };
 
     match add_temperature_measurement(&new_measurement).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error adding measurement: {}", e);
+            return respond_500();
+        },
+    };
+
+    redirect_to_self(req_parts).await
+}
+
+async fn post_sugar(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+    if !token.write {
+        return respond_403_ro().await;
+    }
+
+    let (req_parts, req_body) = req.into_parts();
+    let req_body_bytes = match body::to_bytes(req_body).await {
+        Ok(rbb) => rbb,
+        Err(e) => {
+            error!("error reading request bytes: {}", e);
+            return respond_500();
+        },
+    }.to_vec();
+    let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+
+    let new_measurement = match get_sugar_measurement_from_form(&req_kv).await {
+        Ok(nm) => nm,
+        Err(e) => {
+            return respond_400(e).await;
+        },
+    };
+
+    match add_blood_sugar_measurement(&new_measurement).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error adding measurement: {}", e);
@@ -1001,6 +1157,14 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
         } else {
             respond_405(&[Method::GET, Method::POST]).await
         }
+    } else if req.uri().path() == "/sugar" {
+        if req.method() == Method::GET {
+            get_sugar(&token).await
+        } else if req.method() == Method::POST {
+            post_sugar(req, &token).await
+        } else {
+            respond_405(&[Method::GET, Method::POST]).await
+        }
     } else if req.uri().path() == "/api/bp" {
         if req.method() == Method::GET {
             get_api_bp().await
@@ -1016,6 +1180,12 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
     } else if req.uri().path() == "/api/temperature" {
         if req.method() == Method::GET {
             get_api_temperature().await
+        } else {
+            respond_405(&[Method::GET]).await
+        }
+    } else if req.uri().path() == "/api/sugar" {
+        if req.method() == Method::GET {
+            get_api_sugar().await
         } else {
             respond_405(&[Method::GET]).await
         }
@@ -1051,6 +1221,7 @@ async fn run() -> Result<(), ServerError> {
         ("list.html.tera", include_str!("../templates/list.html.tera")),
         ("mass_list.html.tera", include_str!("../templates/mass_list.html.tera")),
         ("redirect.html.tera", include_str!("../templates/redirect.html.tera")),
+        ("sugar_list.html.tera", include_str!("../templates/sugar_list.html.tera")),
         ("temperature_list.html.tera", include_str!("../templates/temperature_list.html.tera")),
     ])
         .map_err(|e| ServerError::TemplatingSetup(e))?;

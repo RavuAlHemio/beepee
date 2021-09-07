@@ -40,3 +40,12 @@ CREATE TABLE beepee.body_temperature_measurements
 , CONSTRAINT body_temperature_measurements_check CHECK (temperature_celsius >= -273.15)
 , CONSTRAINT body_temperature_measurements_location_id_fkey FOREIGN KEY (location_id) REFERENCES beepee.body_temperature_locations (id)
 );
+
+CREATE SEQUENCE beepee.blood_sugar_measurements_id_seq AS bigint START WITH 1;
+
+CREATE TABLE beepee.blood_sugar_measurements
+( id bigint NOT NULL DEFAULT nextval('beepee.blood_sugar_measurements_id_seq')
+, "timestamp" timestamp with time zone NOT NULL
+, sugar_mmol_per_l numeric(6, 2) NOT NULL
+, CONSTRAINT blood_sugar_measurements_pkey PRIMARY KEY (id)
+);
