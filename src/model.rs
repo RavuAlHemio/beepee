@@ -133,11 +133,7 @@ impl Serialize for BloodPressureMeasurement {
             10,
         )?;
         state.serialize_field("id", &self.id)?;
-        state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
-        state.serialize_field("zoned_timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
-        state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&self.timestamp))?;
-        state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&self.timestamp.time()))?;
-        state.serialize_field("time", &self.timestamp.format("%H:%M").to_string())?;
+        serialize_timestamp(&self.timestamp, &mut state)?;
         state.serialize_field("systolic_mmhg", &self.systolic_mmhg)?;
         state.serialize_field("diastolic_mmhg", &self.diastolic_mmhg)?;
         state.serialize_field("pulse_bpm", &self.pulse_bpm)?;
@@ -265,13 +261,10 @@ impl Serialize for BodyMassMeasurement {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct(
             stringify!(BodyMassMeasurement),
-            7,
+            8,
         )?;
         state.serialize_field("id", &self.id)?;
-        state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
-        state.serialize_field("zoned_timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
-        state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&self.timestamp))?;
-        state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&self.timestamp.time()))?;
+        serialize_timestamp(&self.timestamp, &mut state)?;
         state.serialize_field("mass_kg", &self.mass_kg.to_string())?;
         state.serialize_field("bmi", &self.bmi.map(|b| b.to_string()))?;
         state.end()
@@ -370,15 +363,22 @@ impl Serialize for BodyTemperatureMeasurement {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct(
             stringify!(BodyTemperatureMeasurement),
-            7,
+            8,
         )?;
         state.serialize_field("id", &self.id)?;
-        state.serialize_field("timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
-        state.serialize_field("zoned_timestamp", &self.timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
-        state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&self.timestamp))?;
-        state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&self.timestamp.time()))?;
+        serialize_timestamp(&self.timestamp, &mut state)?;
         state.serialize_field("location_id", &self.location_id.to_string())?;
         state.serialize_field("temperature_celsius", &self.temperature_celsius.to_string())?;
         state.end()
     }
+}
+
+
+fn serialize_timestamp<S: SerializeStruct>(timestamp: &DateTime<Local>, state: &mut S) -> Result<(), S::Error> {
+    state.serialize_field("timestamp", &timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
+    state.serialize_field("zoned_timestamp", &timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
+    state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&timestamp))?;
+    state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&timestamp.time()))?;
+    state.serialize_field("time", &timestamp.format("%H:%M").to_string())?;
+    Ok(())
 }
