@@ -26,8 +26,8 @@
             {% for measurement in measurements %}
                 <tr>
                     <td class="timestamp">{{ measurement.timestamp|escape }}</td>
-                    <td class="mass">{{ measurement.mass_kg|ratio2float }}</td>
-                    <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float }}{% endif %}</td>
+                    <td class="mass">{{ measurement.mass_kg|ratio2float(digits=2) }}</td>
+                    <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float(digits=2) }}{% endif %}</td>
                 </tr>
             {% endfor %}
         </tbody>

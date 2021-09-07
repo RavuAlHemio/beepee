@@ -27,17 +27,17 @@
 {% endmacro %}
 
 {% macro output_mass_minmax_cols(measurement) %}
-    <td class="mass">{{ measurement.mass_kg|ratio2float }}</td>
-    <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float }}{% endif %}</td>
+    <td class="mass">{{ measurement.mass_kg|ratio2float(digits=2) }}</td>
+    <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float(digits=2) }}{% endif %}</td>
 {% endmacro %}
 
 {% macro output_temperature_minmax_cols(measurement) %}
-    <td class="temperature">{{ measurement.temperature_celsius|ratio2float }}</td>
+    <td class="temperature">{{ measurement.temperature_celsius|ratio2float(digits=2) }}</td>
 {% endmacro %}
 
 {% macro output_sugar_minmax_cols(measurement) %}
-    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float }}</td>
-    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl|ratio2float }}</td>
+    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float(digits=1) }}</td>
+    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl|ratio2float(digits=0) }}</td>
 {% endmacro %}
 
 {% macro output_links(current_page) %}
