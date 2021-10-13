@@ -28,6 +28,7 @@
 
 {% macro output_mass_minmax_cols(measurement) %}
     <td class="mass">{{ measurement.mass_kg|ratio2float(digits=2) }}</td>
+    <td class="waist-circum">{% if measurement.waist_circum_cm is string %}{{ measurement.waist_circum_cm|ratio2float(digits=2) }}{% endif %}</td>
     <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float(digits=2) }}{% endif %}</td>
 {% endmacro %}
 

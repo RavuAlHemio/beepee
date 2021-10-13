@@ -17,8 +17,9 @@ CREATE TABLE beepee.mass_measurements
 ( id bigint NOT NULL DEFAULT nextval('beepee.mass_measurements_id_seq')
 , "timestamp" timestamp with time zone NOT NULL
 , mass_kg numeric(6, 2) NOT NULL
+, waist_circum_cm numeric(6, 2) NULL DEFAULT NULL
 , CONSTRAINT mass_measurements_pkey PRIMARY KEY (id)
-, CONSTRAINT mass_measurements_check CHECK (mass_kg >= 0)
+, CONSTRAINT mass_measurements_check CHECK (mass_kg >= 0 AND (waist_circum_cm IS NULL OR waist_circum_cm >= 0))
 );
 
 CREATE SEQUENCE beepee.body_temperature_locations_id_seq AS bigint START WITH 1;

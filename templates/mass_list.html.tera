@@ -10,6 +10,7 @@
     {% if token.write %}
     <form class="input-form" method="post">
         <div><input type="number" name="mass_kg" class="mass" placeholder="mass kg" min="0.0" step="0.1" required="required" /></div>
+        <div><input type="number" name="waist_circum_cm" class="waist-circum" placeholder="waist circumference cm" min="0" step="1" /></div>
         <div><button type="submit">store</button></div>
     </form>
     {% endif %}
@@ -19,6 +20,7 @@
             <tr>
                 <th class="timestamp">timestamp</th>
                 <th class="mass">mass</th>
+                <th class="waist-circum">waist circumference</th>
                 <th class="bmi"><abbr title="Body Mass Index">BMI</abbr></th>
             </tr>
         </thead>
@@ -27,6 +29,7 @@
                 <tr>
                     <td class="timestamp">{{ measurement.timestamp|escape }}</td>
                     <td class="mass">{{ measurement.mass_kg|ratio2float(digits=2) }}</td>
+                    <td class="waist-circum">{% if measurement.waist_circum_cm is string %}{{ measurement.waist_circum_cm|ratio2float(digits=2) }}{% endif %}</td>
                     <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float(digits=2) }}{% endif %}</td>
                 </tr>
             {% endfor %}
@@ -38,6 +41,7 @@
             <tr class="header">
                 <th class="metric">metric</th>
                 <th class="mass">mass</th>
+                <th class="waist-circum">waist circumference</th>
                 <th class="bmi"><abbr title="Body Mass Index">BMI</abbr></th>
             </tr>
             <tr class="maximum">

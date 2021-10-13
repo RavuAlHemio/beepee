@@ -7,6 +7,7 @@ use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
 
 use crate::datetime::{milliseconds_since_epoch, milliseconds_since_midnight};
+use crate::numerism::quasi_n_tile_index;
 
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -101,7 +102,7 @@ impl BloodPressureMeasurement {
     pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
         assert_ne!(measurements.len(), 0);
 
-        let index = (measurements.len() - 1) * n_num / n_den;
+        let index = quasi_n_tile_index(measurements.len(), n_num, n_den);
 
         let mut systolics: Vec<i32> = measurements.iter().map(|m| m.systolic_mmhg).collect();
         systolics.sort_unstable();
@@ -113,7 +114,7 @@ impl BloodPressureMeasurement {
         pulses.sort_unstable();
 
         let mut spo2s: Vec<i32> = measurements.iter().filter_map(|m| m.spo2_percent).collect();
-        let spo2_index = (spo2s.len() - 1) * n_num / n_den;
+        let spo2_index = quasi_n_tile_index(spo2s.len(), n_num, n_den);
         spo2s.sort_unstable();
 
         Self::new(
@@ -179,6 +180,7 @@ pub(crate) struct BodyMassMeasurement {
     pub id: i64,
     pub timestamp: DateTime<Local>,
     pub mass_kg: Rational32,
+    pub waist_circum_cm: Option<Rational32>,
     pub bmi: Option<Rational32>,
 }
 impl BodyMassMeasurement {
@@ -186,12 +188,14 @@ impl BodyMassMeasurement {
         id: i64,
         timestamp: DateTime<Local>,
         mass_kg: Rational32,
+        waist_circum_cm: Option<Rational32>,
         bmi: Option<Rational32>,
     ) -> Self {
         Self {
             id,
             timestamp,
             mass_kg,
+            waist_circum_cm,
             bmi,
         }
     }
@@ -201,6 +205,7 @@ impl BodyMassMeasurement {
             -1,
             self.timestamp.max(other.timestamp),
             self.mass_kg.max(other.mass_kg),
+            self.waist_circum_cm.max(other.waist_circum_cm),
             self.bmi.max(other.bmi),
         )
     }
@@ -210,6 +215,7 @@ impl BodyMassMeasurement {
             -1,
             self.timestamp.min(other.timestamp),
             self.mass_kg.min(other.mass_kg),
+            self.waist_circum_cm.min(other.waist_circum_cm),
             self.bmi.min(other.bmi),
         )
     }
@@ -219,16 +225,21 @@ impl BodyMassMeasurement {
         let len_i32: i32 = measurements.len().try_into().unwrap();
         let len_r32: Rational32 = len_i32.into();
 
+        let circum_len_i32: i32 = measurements.iter().filter(|m| m.waist_circum_cm.is_some()).count().try_into().unwrap();
+        let circum_len_r32: Rational32 = circum_len_i32.into();
+
         let bmi_len_i32: i32 = measurements.iter().filter(|m| m.bmi.is_some()).count().try_into().unwrap();
         let bmi_len_r32: Rational32 = bmi_len_i32.into();
 
         let mass_sum: Rational32 = measurements.iter().map(|m| m.mass_kg).sum();
         let bmi_sum: Rational32 = measurements.iter().filter_map(|m| m.bmi).sum();
+        let circum_sum: Rational32 = measurements.iter().filter_map(|m| m.waist_circum_cm).sum();
 
         Self::new(
             -1,
             measurements[0].timestamp,
             mass_sum / len_r32,
+            if circum_len_r32 != Rational32::zero() { Some(circum_sum / circum_len_r32) } else { None },
             if bmi_len_r32 != Rational32::zero() { Some(bmi_sum / bmi_len_r32) } else { None },
         )
     }
@@ -242,17 +253,18 @@ impl BodyMassMeasurement {
         let mut bmis: Vec<Rational32> = measurements.iter().filter_map(|m| m.bmi).collect();
         bmis.sort_unstable();
 
-        let index = (measurements.len() - 1) * n_num / n_den;
-        let bmi_index = if bmis.len() == 0 {
-            0
-        } else {
-            (bmis.len() - 1) * n_num / n_den
-        };
+        let mut circums: Vec<Rational32> = measurements.iter().filter_map(|m| m.waist_circum_cm).collect();
+        circums.sort_unstable();
+
+        let index = quasi_n_tile_index(measurements.len(), n_num, n_den);
+        let bmi_index = quasi_n_tile_index(bmis.len(), n_num, n_den);
+        let circum_index = quasi_n_tile_index(circums.len(), n_num, n_den);
 
         Self::new(
             -1,
             measurements[0].timestamp,
             masses[index],
+            circums.get(circum_index).map(|c| c.clone()),
             bmis.get(bmi_index).map(|b| b.clone()),
         )
     }
@@ -261,11 +273,12 @@ impl Serialize for BodyMassMeasurement {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct(
             stringify!(BodyMassMeasurement),
-            8,
+            9,
         )?;
         state.serialize_field("id", &self.id)?;
         serialize_timestamp(&self.timestamp, &mut state)?;
         state.serialize_field("mass_kg", &self.mass_kg.to_string())?;
+        state.serialize_field("waist_circum_cm", &self.waist_circum_cm.map(|c| c.to_string()))?;
         state.serialize_field("bmi", &self.bmi.map(|b| b.to_string()))?;
         state.end()
     }
@@ -349,7 +362,7 @@ impl BodyTemperatureMeasurement {
         let mut temperatures: Vec<Rational32> = measurements.iter().map(|m| m.temperature_celsius).collect();
         temperatures.sort_unstable();
 
-        let index = (measurements.len() - 1) * n_num / n_den;
+        let index = quasi_n_tile_index(measurements.len(), n_num, n_den);
 
         Self::new(
             -1,
@@ -441,7 +454,7 @@ impl BloodSugarMeasurement {
         let mut sugars_mmol_per_l: Vec<Rational32> = measurements.iter().map(|m| m.sugar_mmol_per_l).collect();
         sugars_mmol_per_l.sort_unstable();
 
-        let index = (measurements.len() - 1) * n_num / n_den;
+        let index = quasi_n_tile_index(measurements.len(), n_num, n_den);
 
         Self::new(
             -1,

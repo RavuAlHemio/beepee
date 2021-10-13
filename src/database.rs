@@ -109,12 +109,21 @@ pub(crate) async fn add_mass_measurement(measurement: &BodyMassMeasurement) -> R
     let client = connect()
         .await?;
 
-    let row = client
-        .query_one(
-            "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2))) RETURNING id",
-            &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom()],
-        )
-        .await?;
+    let row = if let Some(circum) = &measurement.waist_circum_cm {
+        client
+            .query_one(
+                "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg, waist_circum_cm) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), ($4::int::numeric(6, 2) / $5::int::numeric(6, 2))) RETURNING id",
+                &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &circum.numer(), &circum.denom()],
+            )
+            .await?
+    } else {
+        client
+            .query_one(
+                "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg, waist_circum_cm) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), NULL) RETURNING id",
+                &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom()],
+            )
+            .await?
+    };
     let measurement_id: i64 = row.get(0);
 
     Ok(measurement_id)
@@ -138,12 +147,21 @@ pub(crate) async fn update_mass_measurement(measurement: &BodyMassMeasurement) -
     let client = connect()
         .await?;
 
-    client
-        .execute(
-            "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)) WHERE id=$4",
-            &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &measurement.id],
-        )
-        .await?;
+    if let Some(circum) = &measurement.waist_circum_cm {
+        client
+            .execute(
+                "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), waist_circum_cm=($4::int::numeric(6, 2) / $5::int::numeric(6, 2)) WHERE id=$6",
+                &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &circum.numer(), &circum.denom(), &measurement.id],
+            )
+            .await?
+    } else {
+        client
+            .execute(
+                "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), waist_circum_cm=NULL WHERE id=$4",
+                &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &measurement.id],
+            )
+            .await?
+    };
 
     Ok(())
 }
@@ -167,7 +185,7 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
 
     let rows = client
         .query(
-            "SELECT id, \"timestamp\", mass_kg::character varying(128) FROM beepee.mass_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            "SELECT id, \"timestamp\", mass_kg::character varying(128), waist_circum_cm::character varying(128) FROM beepee.mass_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
@@ -176,6 +194,11 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
         let mass_string: String = row.get(2);
         let mass_kg: Rational32 = r32_from_decimal(&mass_string)
             .expect("parsing mass failed");
+        let circum_string: Option<String> = row.get(3);
+        let circum_cm: Option<Rational32> = circum_string.map(|s|
+            r32_from_decimal(&s)
+                .expect("parsing circumference failed")
+        );
         let bmi: Option<Rational32> = square_height_m2.map(|sqh|
             mass_kg / sqh
         );
@@ -183,6 +206,7 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
             row.get(0),
             row.get(1),
             mass_kg,
+            circum_cm,
             bmi,
         ));
     }

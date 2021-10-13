@@ -73,6 +73,15 @@ pub(crate) fn r32_from_decimal(decimal_str: &str) -> Result<Rational32, ParseRat
     }
 }
 
+#[inline]
+pub(crate) fn quasi_n_tile_index(element_count: usize, n_num: usize, n_den: usize) -> usize {
+    if element_count == 0 {
+        0
+    } else {
+        (element_count - 1) * n_num / n_den
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

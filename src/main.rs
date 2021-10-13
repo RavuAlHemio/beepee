@@ -829,6 +829,7 @@ fn get_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BloodPr
 
 async fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<BodyMassMeasurement, ClientError> {
     let mass_kg: Rational32 = get_req_form_r32_gt0(&req_kv, "mass_kg")?;
+    let waist_circum_cm: Option<Rational32> = get_form_r32_gt0(&req_kv, "waist_circum_cm")?;
 
     let height_cm: Option<i32> = {
         let config_guard = CONFIG
@@ -849,6 +850,7 @@ async fn get_mass_measurement_from_form(req_kv: &HashMap<String, String>) -> Res
         -1,
         local_now,
         mass_kg,
+        waist_circum_cm,
         bmi,
     );
     Ok(measurement)
