@@ -71,7 +71,7 @@
         </table>
     {% endif %}
 
-    <p>mass in kg</p>
+    <p>mass in kg, waist circumference in cm</p>
 
     {{ list_macros::output_links(current_page="mass") }}
 
