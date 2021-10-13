@@ -7,7 +7,7 @@ use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
 
 use crate::datetime::{milliseconds_since_epoch, milliseconds_since_midnight};
-use crate::numerism::quasi_n_tile_index;
+use crate::numerism::{optional_max, optional_min, quasi_n_tile_index};
 
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -39,36 +39,24 @@ impl BloodPressureMeasurement {
     }
 
     pub fn values_max(&self, other: &Self) -> Self {
-        let spo2_percent = match (self.spo2_percent, other.spo2_percent) {
-            (None, None) => None,
-            (Some(sv), None) => Some(sv),
-            (None, Some(ov)) => Some(ov),
-            (Some(sv), Some(ov)) => Some(sv.max(ov)),
-        };
         Self::new(
             -1,
             self.timestamp.max(other.timestamp),
             self.systolic_mmhg.max(other.systolic_mmhg),
             self.diastolic_mmhg.max(other.diastolic_mmhg),
             self.pulse_bpm.max(other.pulse_bpm),
-            spo2_percent,
+            optional_max(self.spo2_percent, other.spo2_percent),
         )
     }
 
     pub fn values_min(&self, other: &Self) -> Self {
-        let spo2_percent = match (self.spo2_percent, other.spo2_percent) {
-            (None, None) => None,
-            (Some(sv), None) => Some(sv),
-            (None, Some(ov)) => Some(ov),
-            (Some(sv), Some(ov)) => Some(sv.min(ov)),
-        };
         Self::new(
             -1,
             self.timestamp.min(other.timestamp),
             self.systolic_mmhg.min(other.systolic_mmhg),
             self.diastolic_mmhg.min(other.diastolic_mmhg),
             self.pulse_bpm.min(other.pulse_bpm),
-            spo2_percent,
+            optional_min(self.spo2_percent, other.spo2_percent),
         )
     }
 
@@ -205,8 +193,8 @@ impl BodyMassMeasurement {
             -1,
             self.timestamp.max(other.timestamp),
             self.mass_kg.max(other.mass_kg),
-            self.waist_circum_cm.max(other.waist_circum_cm),
-            self.bmi.max(other.bmi),
+            optional_max(self.waist_circum_cm, other.waist_circum_cm),
+            optional_max(self.bmi, other.bmi),
         )
     }
 
@@ -215,8 +203,8 @@ impl BodyMassMeasurement {
             -1,
             self.timestamp.min(other.timestamp),
             self.mass_kg.min(other.mass_kg),
-            self.waist_circum_cm.min(other.waist_circum_cm),
-            self.bmi.min(other.bmi),
+            optional_min(self.waist_circum_cm, other.waist_circum_cm),
+            optional_min(self.bmi, other.bmi),
         )
     }
 

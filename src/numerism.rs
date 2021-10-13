@@ -82,6 +82,24 @@ pub(crate) fn quasi_n_tile_index(element_count: usize, n_num: usize, n_den: usiz
     }
 }
 
+#[inline]
+fn optional_pick<T, A: FnMut(T, T) -> Option<T>>(left: Option<T>, right: Option<T>, mut arbitration: A) -> Option<T> {
+    match (left, right) {
+        (None, None) => None,
+        (Some(l), None) => Some(l),
+        (None, Some(r)) => Some(r),
+        (Some(l), Some(r)) => arbitration(l, r),
+    }
+}
+#[inline]
+pub(crate) fn optional_max<T: Ord>(left: Option<T>, right: Option<T>) -> Option<T> {
+    optional_pick(left, right, |l, r| Some(l.max(r)))
+}
+#[inline]
+pub(crate) fn optional_min<T: Ord>(left: Option<T>, right: Option<T>) -> Option<T> {
+    optional_pick(left, right, |l, r| Some(l.min(r)))
+}
+
 
 #[cfg(test)]
 mod tests {
