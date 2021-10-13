@@ -112,14 +112,14 @@ pub(crate) async fn add_mass_measurement(measurement: &BodyMassMeasurement) -> R
     let row = if let Some(circum) = &measurement.waist_circum_cm {
         client
             .query_one(
-                "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg, waist_circum_cm) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), ($4::int::numeric(6, 2) / $5::int::numeric(6, 2))) RETURNING id",
+                "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg, waist_circum_cm) VALUES ($1, (CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2))), (CAST(CAST($4 AS int) AS numeric(6, 2)) / CAST(CAST($5 AS int) AS numeric(6, 2)))) RETURNING id",
                 &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &circum.numer(), &circum.denom()],
             )
             .await?
     } else {
         client
             .query_one(
-                "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg, waist_circum_cm) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), NULL) RETURNING id",
+                "INSERT INTO beepee.mass_measurements (\"timestamp\", mass_kg, waist_circum_cm) VALUES ($1, (CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2))), NULL) RETURNING id",
                 &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom()],
             )
             .await?
@@ -150,14 +150,14 @@ pub(crate) async fn update_mass_measurement(measurement: &BodyMassMeasurement) -
     if let Some(circum) = &measurement.waist_circum_cm {
         client
             .execute(
-                "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), waist_circum_cm=($4::int::numeric(6, 2) / $5::int::numeric(6, 2)) WHERE id=$6",
+                "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=(CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2))), waist_circum_cm=(CAST(CAST($4 AS int) AS numeric(6, 2)) / CAST(CAST($5 AS int) AS numeric(6, 2))) WHERE id=$6",
                 &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &circum.numer(), &circum.denom(), &measurement.id],
             )
             .await?
     } else {
         client
             .execute(
-                "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)), waist_circum_cm=NULL WHERE id=$4",
+                "UPDATE beepee.mass_measurements SET \"timestamp\"=$1, mass_kg=(CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2))), waist_circum_cm=NULL WHERE id=$4",
                 &[&measurement.timestamp, &measurement.mass_kg.numer(), &measurement.mass_kg.denom(), &measurement.id],
             )
             .await?
@@ -185,7 +185,7 @@ pub(crate) async fn get_recent_mass_measurements(ago: Duration) -> Result<Vec<Bo
 
     let rows = client
         .query(
-            "SELECT id, \"timestamp\", mass_kg::character varying(128), waist_circum_cm::character varying(128) FROM beepee.mass_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            "SELECT id, \"timestamp\", CAST(mass_kg AS character varying(128)) mass_kg, CAST(waist_circum_cm AS character varying(128)) waist_circum_cm FROM beepee.mass_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
@@ -284,7 +284,7 @@ pub(crate) async fn add_temperature_measurement(measurement: &BodyTemperatureMea
 
     let row = client
         .query_one(
-            "INSERT INTO beepee.body_temperature_measurements (\"timestamp\", location_id, temperature_celsius) VALUES ($1, $2, ($3::int::numeric(6, 2) / $4::int::numeric(6, 2))) RETURNING id",
+            "INSERT INTO beepee.body_temperature_measurements (\"timestamp\", location_id, temperature_celsius) VALUES ($1, $2, (CAST(CAST($3 AS int) AS numeric(6, 2)) / CAST(CAST($4 AS int) AS numeric(6, 2)))) RETURNING id",
             &[&measurement.timestamp, &measurement.location_id, &measurement.temperature_celsius.numer(), &measurement.temperature_celsius.denom()],
         )
         .await?;
@@ -313,7 +313,7 @@ pub(crate) async fn update_temperature_measurement(measurement: &BodyTemperature
 
     client
         .execute(
-            "UPDATE beepee.body_temperature_measurements SET \"timestamp\"=$1, location_id=$2, temperature_celsius=($3::int::numeric(6, 2) / $4::int::numeric(6, 2)) WHERE id=$5",
+            "UPDATE beepee.body_temperature_measurements SET \"timestamp\"=$1, location_id=$2, temperature_celsius=(CAST(CAST($3 AS int) AS numeric(6, 2)) / CAST(CAST($4 AS int) AS numeric(6, 2))) WHERE id=$5",
             &[&measurement.timestamp, &measurement.location_id, &measurement.temperature_celsius.numer(), &measurement.temperature_celsius.denom(), &measurement.id],
         )
         .await?;
@@ -329,7 +329,7 @@ pub(crate) async fn get_recent_temperature_measurements(ago: Duration) -> Result
 
     let rows = client
         .query(
-            "SELECT id, \"timestamp\", location_id, temperature_celsius::character varying(128) FROM beepee.body_temperature_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            "SELECT id, \"timestamp\", location_id, CAST(temperature_celsius AS character varying(128)) temperature_celsius FROM beepee.body_temperature_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
@@ -355,7 +355,7 @@ pub(crate) async fn add_blood_sugar_measurement(measurement: &BloodSugarMeasurem
 
     let row = client
         .query_one(
-            "INSERT INTO beepee.blood_sugar_measurements (\"timestamp\", sugar_mmol_per_l) VALUES ($1, ($2::int::numeric(6, 2) / $3::int::numeric(6, 2))) RETURNING id",
+            "INSERT INTO beepee.blood_sugar_measurements (\"timestamp\", sugar_mmol_per_l) VALUES ($1, (CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2)))) RETURNING id",
             &[&measurement.timestamp, &measurement.sugar_mmol_per_l.numer(), &measurement.sugar_mmol_per_l.denom()],
         )
         .await?;
@@ -384,7 +384,7 @@ pub(crate) async fn update_blood_sugar_measurement(measurement: &BloodSugarMeasu
 
     client
         .execute(
-            "UPDATE beepee.blood_sugar_measurements SET \"timestamp\"=$1, sugar_mmol_per_l=($2::int::numeric(6, 2) / $3::int::numeric(6, 2)) WHERE id=$4",
+            "UPDATE beepee.blood_sugar_measurements SET \"timestamp\"=$1, sugar_mmol_per_l=(CASE(CASE($2 AS int) AS numeric(6, 2)) / CASE(CASE($3 AS int) AS numeric(6, 2))) WHERE id=$4",
             &[&measurement.timestamp, &measurement.sugar_mmol_per_l.numer(), &measurement.sugar_mmol_per_l.denom(), &measurement.id],
         )
         .await?;
@@ -400,7 +400,7 @@ pub(crate) async fn get_recent_blood_sugar_measurements(ago: Duration) -> Result
 
     let rows = client
         .query(
-            "SELECT id, \"timestamp\", sugar_mmol_per_l::character varying(128) FROM beepee.blood_sugar_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            "SELECT id, \"timestamp\", CASE(sugar_mmol_per_l AS character varying(128)) sugar_mmol_per_l FROM beepee.blood_sugar_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
