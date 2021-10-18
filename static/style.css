@@ -37,3 +37,13 @@ td.missing
 {
     form.input-form { display: none; }
 }
+
+@media screen and (prefers-color-scheme: dark)
+{
+    body { background-color: black; color: #ccc; }
+    table, th, td { border: 1px solid #333; }
+    input[type=number] { background-color: black; color: #ccc; }
+    input[type=submit], button[type=submit] { background-color: #555; color: #ccc; }
+    a:link { color: #ff0; }
+    a:visited { color: #0ff; }
+}
