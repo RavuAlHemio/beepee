@@ -384,7 +384,7 @@ pub(crate) async fn update_blood_sugar_measurement(measurement: &BloodSugarMeasu
 
     client
         .execute(
-            "UPDATE beepee.blood_sugar_measurements SET \"timestamp\"=$1, sugar_mmol_per_l=(CASE(CASE($2 AS int) AS numeric(6, 2)) / CASE(CASE($3 AS int) AS numeric(6, 2))) WHERE id=$4",
+            "UPDATE beepee.blood_sugar_measurements SET \"timestamp\"=$1, sugar_mmol_per_l=(CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2))) WHERE id=$4",
             &[&measurement.timestamp, &measurement.sugar_mmol_per_l.numer(), &measurement.sugar_mmol_per_l.denom(), &measurement.id],
         )
         .await?;
@@ -400,7 +400,7 @@ pub(crate) async fn get_recent_blood_sugar_measurements(ago: Duration) -> Result
 
     let rows = client
         .query(
-            "SELECT id, \"timestamp\", CASE(sugar_mmol_per_l AS character varying(128)) sugar_mmol_per_l FROM beepee.blood_sugar_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            "SELECT id, \"timestamp\", CAST(sugar_mmol_per_l AS character varying(128)) sugar_mmol_per_l FROM beepee.blood_sugar_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
             &[&start_time],
         )
         .await?;
