@@ -729,6 +729,9 @@ fn get_form_i32_gt0(req_kv: &HashMap<String, String>, key: &str) -> Result<Optio
         Some(sv) => sv,
         None => return Ok(None),
     };
+    if string_value.len() == 0 {
+        return Ok(None);
+    }
     let i32_value: i32 = string_value.parse()
         .map_err(|e| ClientError::FailedToParseIntValue(String::from(key), string_value.clone(), e))?;
     if i32_value < 0 {
@@ -751,6 +754,9 @@ fn get_form_i64(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<i6
         Some(sv) => sv,
         None => return Ok(None),
     };
+    if string_value.len() == 0 {
+        return Ok(None);
+    }
     let i64_value: i64 = string_value.parse()
         .map_err(|e| ClientError::FailedToParseIntValue(String::from(key), string_value.clone(), e))?;
     Ok(Some(i64_value))
@@ -769,6 +775,9 @@ fn get_form_r32(req_kv: &HashMap<String, String>, key: &str) -> Result<Option<Ra
         Some(sv) => sv,
         None => return Ok(None),
     };
+    if string_value.len() == 0 {
+        return Ok(None);
+    }
     let r32_value: Rational32 = r32_from_decimal(string_value)
         .map_err(|e| ClientError::FailedToParseRationalValue(String::from(key), string_value.clone(), e))?;
     Ok(Some(r32_value))
