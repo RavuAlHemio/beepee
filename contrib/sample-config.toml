@@ -1,0 +1,16 @@
+base_url = "http://127.0.0.1:8000/"
+db_conn_string = "host=host.docker.internal port=5432 user=beepee password=beepee dbname=beepee"
+http_listen = "127.0.0.1:8000"
+auth_tokens = [
+    { token = 'authtoken', write = true }
+]
+height_cm = 180
+default_temperature_location_id = 1
+
+[hours]
+morning_start = 5
+morning_end = 13
+midday_start = 11
+midday_end = 20
+evening_start = 17
+
