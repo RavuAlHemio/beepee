@@ -13,21 +13,25 @@ use std::ffi::OsString;
 use std::fmt;
 use std::net::{AddrParseError, SocketAddr};
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::result::Result;
 
 use chrono::{Duration, Local, Timelike};
 use env_logger;
 use form_urlencoded;
 use http::request::Parts;
-use hyper::{Body, Method, Request, Response, Server};
-use hyper::body;
-use hyper::service::{make_service_fn, service_fn};
+use http_body_util::{BodyExt, Full};
+use hyper::{Method, Request, Response};
+use hyper::body::{Bytes, Incoming};
+use hyper::service::service_fn;
+use hyper_util::rt::tokio::{TokioExecutor, TokioIo};
 use log::error;
 use num_rational::Rational32;
 use num_traits::Zero;
 use once_cell::sync::{Lazy, OnceCell};
 use regex::Regex;
 use tera::{Context, Tera};
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use toml;
 use url::Url;
@@ -47,7 +51,7 @@ use crate::numerism::{ParseRationalError, r32_from_decimal};
 use crate::templating::RatioToFloat;
 
 
-const ABSOLUTE_ZERO_CELSIUS: Lazy<Rational32> = Lazy::new(|| Rational32::new(-27315, 100));
+static ABSOLUTE_ZERO_CELSIUS: Lazy<Rational32> = Lazy::new(|| Rational32::new(-27315, 100));
 static TERA: OnceCell<RwLock<Tera>> = OnceCell::new();
 static STATIC_PATH_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^/static/([a-z0-9-._]+)$").unwrap());
 
@@ -69,7 +73,6 @@ pub(crate) enum ServerError {
     ReadingConfigFile(std::io::Error),
     ParsingConfigFile(toml::de::Error),
     ParsingListenAddress(AddrParseError),
-    HyperError(hyper::Error),
     TemplatingSetup(tera::Error),
 }
 impl fmt::Display for ServerError {
@@ -83,8 +86,6 @@ impl fmt::Display for ServerError {
                 => write!(f, "error parsing config file: {}", e),
             ServerError::ParsingListenAddress(e)
                 => write!(f, "error parsing listen address: {}", e),
-            ServerError::HyperError(e)
-                => write!(f, "hyper error: {}", e),
             ServerError::TemplatingSetup(e)
                 => write!(f, "error setting up templating: {}", e),
         }
@@ -131,7 +132,7 @@ impl Error for ClientError {
 }
 
 
-async fn render_template(template_name: &str, context: &Context) -> Result<Body, tera::Error> {
+async fn render_template(template_name: &str, context: &Context) -> Result<Full<Bytes>, tera::Error> {
     let template_string = {
         TERA.get()
             .expect("template engine is set")
@@ -139,7 +140,7 @@ async fn render_template(template_name: &str, context: &Context) -> Result<Body,
             .await
             .render(template_name, context)?
     };
-    let body = Body::from(template_string);
+    let body = Full::new(Bytes::from(template_string));
     Ok(body)
 }
 
@@ -148,7 +149,7 @@ async fn respond_template(
     context: &Context,
     status: u16,
     headers: &HashMap<String, String>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<Full<Bytes>>, Infallible> {
     let body = match render_template(template_name, context).await {
         Ok(b) => b,
         Err(e) => {
@@ -175,8 +176,8 @@ async fn respond_template(
     Ok(response)
 }
 
-fn respond_500() -> Result<Response<Body>, Infallible> {
-    let body = Body::from(String::from(
+fn respond_500() -> Result<Response<Full<Bytes>>, Infallible> {
+    let body = Full::from(Bytes::from(String::from(
         r#"<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
@@ -188,7 +189,7 @@ fn respond_500() -> Result<Response<Body>, Infallible> {
 <p>Something went wrong. It's not your fault. Tell the people responsible to check the logs.</p>
 </body>
 </html>"#
-    ));
+    )));
 
     // can't do much except unwrap/expect here, as this *is* the error handler
     let response = Response::builder()
@@ -198,7 +199,7 @@ fn respond_500() -> Result<Response<Body>, Infallible> {
     Ok(response)
 }
 
-async fn respond_400(err: ClientError) -> Result<Response<Body>, Infallible> {
+async fn respond_400(err: ClientError) -> Result<Response<Full<Bytes>>, Infallible> {
     let mut context = Context::new();
     context.insert("error", &err.to_string());
 
@@ -210,7 +211,7 @@ async fn respond_400(err: ClientError) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn respond_403() -> Result<Response<Body>, Infallible> {
+async fn respond_403() -> Result<Response<Full<Bytes>>, Infallible> {
     respond_template(
         "403.html.tera",
         &Context::new(),
@@ -219,7 +220,7 @@ async fn respond_403() -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn respond_403_ro() -> Result<Response<Body>, Infallible> {
+async fn respond_403_ro() -> Result<Response<Full<Bytes>>, Infallible> {
     let mut headers = HashMap::new();
     headers.insert(
         "Forbidden-Reason".to_owned(),
@@ -233,7 +234,7 @@ async fn respond_403_ro() -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn respond_404() -> Result<Response<Body>, Infallible> {
+async fn respond_404() -> Result<Response<Full<Bytes>>, Infallible> {
     respond_template(
         "404.html.tera",
         &Context::new(),
@@ -242,7 +243,7 @@ async fn respond_404() -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn respond_405(allowed_methods: &[Method]) -> Result<Response<Body>, Infallible> {
+async fn respond_405(allowed_methods: &[Method]) -> Result<Response<Full<Bytes>>, Infallible> {
     let methods: Vec<String> = allowed_methods.iter()
         .map(|m| m.to_string())
         .collect();
@@ -262,7 +263,7 @@ async fn respond_405(allowed_methods: &[Method]) -> Result<Response<Body>, Infal
     ).await
 }
 
-async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
+async fn redirect_to_self(parts: Parts) -> Result<Response<Full<Bytes>>, Infallible> {
     let req_uri_string = parts.uri.to_string();
     let req_uri_noslash = req_uri_string.trim_start_matches('/');
 
@@ -302,7 +303,7 @@ async fn redirect_to_self(parts: Parts) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_index(token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn get_index(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -340,10 +341,10 @@ async fn get_index(token: &AuthToken) -> Result<Response<Body>, Infallible> {
             min_measurement = Some(measurement.clone());
         }
 
-        let mut day = measurement.timestamp.date().naive_local();
+        let mut day = measurement.timestamp.date_naive();
         if measurement.timestamp.hour() < hours.morning_start {
             // count this as (the evening of) the previous day
-            day = day.pred();
+            day = day.pred_opt().expect("no previous day?!");
         }
 
         let date_string = day.format("%Y-%m-%d").to_string();
@@ -406,7 +407,7 @@ async fn get_index(token: &AuthToken) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_mass(token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn get_mass(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_mass_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -460,7 +461,7 @@ async fn get_mass(token: &AuthToken) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_temperature(token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn get_temperature(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_temperature_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -534,7 +535,7 @@ async fn get_temperature(token: &AuthToken) -> Result<Response<Body>, Infallible
     ).await
 }
 
-async fn get_sugar(token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn get_sugar(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_blood_sugar_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -588,7 +589,7 @@ async fn get_sugar(token: &AuthToken) -> Result<Response<Body>, Infallible> {
     ).await
 }
 
-async fn get_api_bp() -> Result<Response<Body>, Infallible> {
+async fn get_api_bp() -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -612,7 +613,7 @@ async fn get_api_bp() -> Result<Response<Body>, Infallible> {
     let response_res = Response::builder()
         .status(200)
         .header("Content-Type", "application/json")
-        .body(Body::from(recent_json));
+        .body(Full::new(Bytes::from(recent_json)));
     match response_res {
         Ok(r) => Ok(r),
         Err(e) => {
@@ -622,7 +623,7 @@ async fn get_api_bp() -> Result<Response<Body>, Infallible> {
     }
 }
 
-async fn get_api_mass() -> Result<Response<Body>, Infallible> {
+async fn get_api_mass() -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_mass_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -646,7 +647,7 @@ async fn get_api_mass() -> Result<Response<Body>, Infallible> {
     let response_res = Response::builder()
         .status(200)
         .header("Content-Type", "application/json")
-        .body(Body::from(recent_json));
+        .body(Full::new(Bytes::from(recent_json)));
     match response_res {
         Ok(r) => Ok(r),
         Err(e) => {
@@ -656,7 +657,7 @@ async fn get_api_mass() -> Result<Response<Body>, Infallible> {
     }
 }
 
-async fn get_api_temperature() -> Result<Response<Body>, Infallible> {
+async fn get_api_temperature() -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_temperature_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -680,7 +681,7 @@ async fn get_api_temperature() -> Result<Response<Body>, Infallible> {
     let response_res = Response::builder()
         .status(200)
         .header("Content-Type", "application/json")
-        .body(Body::from(recent_json));
+        .body(Full::new(Bytes::from(recent_json)));
     match response_res {
         Ok(r) => Ok(r),
         Err(e) => {
@@ -690,7 +691,7 @@ async fn get_api_temperature() -> Result<Response<Body>, Infallible> {
     }
 }
 
-async fn get_api_sugar() -> Result<Response<Body>, Infallible> {
+async fn get_api_sugar() -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_blood_sugar_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
         Err(e) => {
@@ -714,7 +715,7 @@ async fn get_api_sugar() -> Result<Response<Body>, Infallible> {
     let response_res = Response::builder()
         .status(200)
         .header("Content-Type", "application/json")
-        .body(Body::from(recent_json));
+        .body(Full::new(Bytes::from(recent_json)));
     match response_res {
         Ok(r) => Ok(r),
         Err(e) => {
@@ -913,19 +914,19 @@ async fn get_sugar_measurement_from_form(req_kv: &HashMap<String, String>) -> Re
     Ok(measurement)
 }
 
-async fn post_index(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn post_index(req: Request<Incoming>, token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     if !token.write {
         return respond_403_ro().await;
     }
 
     let (req_parts, req_body) = req.into_parts();
-    let req_body_bytes = match body::to_bytes(req_body).await {
-        Ok(rbb) => rbb,
+    let req_body_bytes = match req_body.collect().await {
+        Ok(rbc) => rbc.to_bytes().to_vec(),
         Err(e) => {
             error!("error reading request bytes: {}", e);
             return respond_500();
         },
-    }.to_vec();
+    };
     let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
@@ -948,19 +949,19 @@ async fn post_index(req: Request<Body>, token: &AuthToken) -> Result<Response<Bo
     redirect_to_self(req_parts).await
 }
 
-async fn post_mass(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn post_mass(req: Request<Incoming>, token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     if !token.write {
         return respond_403_ro().await;
     }
 
     let (req_parts, req_body) = req.into_parts();
-    let req_body_bytes = match body::to_bytes(req_body).await {
-        Ok(rbb) => rbb,
+    let req_body_bytes = match req_body.collect().await {
+        Ok(rbc) => rbc.to_bytes().to_vec(),
         Err(e) => {
             error!("error reading request bytes: {}", e);
             return respond_500();
         },
-    }.to_vec();
+    };
     let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
@@ -983,19 +984,19 @@ async fn post_mass(req: Request<Body>, token: &AuthToken) -> Result<Response<Bod
     redirect_to_self(req_parts).await
 }
 
-async fn post_temperature(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn post_temperature(req: Request<Incoming>, token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     if !token.write {
         return respond_403_ro().await;
     }
 
     let (req_parts, req_body) = req.into_parts();
-    let req_body_bytes = match body::to_bytes(req_body).await {
-        Ok(rbb) => rbb,
+    let req_body_bytes = match req_body.collect().await {
+        Ok(rbc) => rbc.to_bytes().to_vec(),
         Err(e) => {
             error!("error reading request bytes: {}", e);
             return respond_500();
         },
-    }.to_vec();
+    };
     let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
@@ -1018,19 +1019,19 @@ async fn post_temperature(req: Request<Body>, token: &AuthToken) -> Result<Respo
     redirect_to_self(req_parts).await
 }
 
-async fn post_sugar(req: Request<Body>, token: &AuthToken) -> Result<Response<Body>, Infallible> {
+async fn post_sugar(req: Request<Incoming>, token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     if !token.write {
         return respond_403_ro().await;
     }
 
     let (req_parts, req_body) = req.into_parts();
-    let req_body_bytes = match body::to_bytes(req_body).await {
-        Ok(rbb) => rbb,
+    let req_body_bytes = match req_body.collect().await {
+        Ok(rbc) => rbc.to_bytes().to_vec(),
         Err(e) => {
             error!("error reading request bytes: {}", e);
             return respond_500();
         },
-    }.to_vec();
+    };
     let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
@@ -1053,7 +1054,7 @@ async fn post_sugar(req: Request<Body>, token: &AuthToken) -> Result<Response<Bo
     redirect_to_self(req_parts).await
 }
 
-async fn respond_static_file(file_name: &str) -> Result<Response<Body>, Infallible> {
+async fn respond_static_file(file_name: &str) -> Result<Response<Full<Bytes>>, Infallible> {
     let mime_type = if file_name.ends_with(".css") {
         "text/css"
     } else if file_name.ends_with(".js") {
@@ -1093,7 +1094,7 @@ async fn respond_static_file(file_name: &str) -> Result<Response<Body>, Infallib
     let response_res = Response::builder()
         .header("Content-Length", format!("{}", buf.len()))
         .header("Content-Type", mime_type)
-        .body(Body::from(buf));
+        .body(Full::new(Bytes::from(buf)));
     match response_res {
         Ok(r) => Ok(r),
         Err(e) => {
@@ -1103,7 +1104,7 @@ async fn respond_static_file(file_name: &str) -> Result<Response<Body>, Infallib
     }
 }
 
-async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
     if let Some(cap) = STATIC_PATH_RE.captures(req.uri().path()) {
         let static_file_name = cap.get(1).expect("filename captured");
         return respond_static_file(static_file_name.as_str()).await;
@@ -1248,16 +1249,27 @@ async fn run() -> Result<(), ServerError> {
             .map_err(|e| ServerError::ParsingListenAddress(e))?
     };
 
-    let make_service = make_service_fn(|_conn| async {
-        Ok::<_, Infallible>(service_fn(handle_request))
-    });
+    let listener = TcpListener::bind(addr).await
+        .expect("failed to bind to listen address");
 
-    let server = Server::bind(&addr).serve(make_service);
-    server.await
-        .map_err(|e| ServerError::HyperError(e))
+    loop {
+        let (stream, remote_addr) = listener.accept().await
+            .expect("failed to accept connection");
+        let io = TokioIo::new(stream);
+        tokio::task::spawn(async move {
+            let res = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                .http1()
+                .http2()
+                .serve_connection(io, service_fn(handle_request))
+                .await;
+            if let Err(e) = res {
+                error!("error serving connection from {}: {}", remote_addr, e);
+            }
+        });
+    }
 }
 
-fn main() {
+fn main() -> ExitCode {
     let result = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -1266,11 +1278,11 @@ fn main() {
             run().await
         });
 
-    std::process::exit(match result {
-        Ok(()) => 0,
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{}", e);
-            1
+            ExitCode::FAILURE
         },
-    });
+    }
 }
