@@ -41,6 +41,11 @@
     <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl()|ratio2float_owned(0) }}</td>
 {% endmacro %}
 
+{% macro output_long_term_sugar_stats_cols(measurement) %}
+    <td class="hba1c mmol-per-mol">{{ measurement.hba1c_mmol_per_mol|ratio2float(1) }}</td>
+    <td class="hba1c dcct-percent">{{ measurement.hba1c_dcct_percent()|ratio2float_owned(0) }}</td>
+{% endmacro %}
+
 {% macro output_links(current_page) %}
     <p class="link-bar">
         {% if current_page == "bp" %}
@@ -65,6 +70,12 @@
             <strong class="current-page sugar">blood sugar</strong>
         {% else %}
             <a class="page-link sugar" href="sugar?token={{ token.token|urlencode }}">blood sugar</a>
+        {% endif %}
+        &middot;
+        {% if current_page == "long-term-sugar" %}
+            <strong class="current-page long-term-sugar">long-term blood sugar</strong>
+        {% else %}
+            <a class="page-link long-term-sugar" href="long-term-sugar?token={{ token.token|urlencode }}">long-term blood sugar</a>
         {% endif %}
     </p>
 {% endmacro %}

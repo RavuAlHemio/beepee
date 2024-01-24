@@ -7,7 +7,7 @@ use tokio_postgres::{self, Client, NoTls};
 use crate::config::CONFIG;
 use crate::model::{
     BloodPressureMeasurement, BloodSugarMeasurement, BodyMassMeasurement, BodyTemperatureLocation,
-    BodyTemperatureMeasurement,
+    BodyTemperatureMeasurement, LongTermBloodSugarMeasurement,
 };
 use crate::numerism::r32_from_decimal;
 
@@ -413,6 +413,76 @@ pub(crate) async fn get_recent_blood_sugar_measurements(ago: Duration) -> Result
             row.get(0),
             row.get(1),
             temperature_celsius,
+        ));
+    }
+
+    Ok(ret)
+}
+
+pub(crate) async fn add_long_term_blood_sugar_measurement(measurement: &LongTermBloodSugarMeasurement) -> Result<i64, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let row = client
+        .query_one(
+            "INSERT INTO beepee.long_term_blood_sugar_measurements (\"timestamp\", hba1c_mmol_per_mol) VALUES ($1, (CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2)))) RETURNING id",
+            &[&measurement.timestamp, &measurement.hba1c_mmol_per_mol.numer(), &measurement.hba1c_mmol_per_mol.denom()],
+        )
+        .await?;
+    let measurement_id: i64 = row.get(0);
+
+    Ok(measurement_id)
+}
+
+pub(crate) async fn remove_long_term_blood_sugar_measurement(measurement_id: i64) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "DELETE FROM beepee.long_term_blood_sugar_measurements WHERE id = $1",
+            &[&measurement_id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn update_long_term_blood_sugar_measurement(measurement: &LongTermBloodSugarMeasurement) -> Result<(), tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    client
+        .execute(
+            "UPDATE beepee.long_term_blood_sugar_measurements SET \"timestamp\"=$1, hba1c_mmol_per_mol=(CAST(CAST($2 AS int) AS numeric(6, 2)) / CAST(CAST($3 AS int) AS numeric(6, 2))) WHERE id=$4",
+            &[&measurement.timestamp, &measurement.hba1c_mmol_per_mol.numer(), &measurement.hba1c_mmol_per_mol.denom(), &measurement.id],
+        )
+        .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn get_recent_long_term_blood_sugar_measurements(ago: Duration) -> Result<Vec<LongTermBloodSugarMeasurement>, tokio_postgres::Error> {
+    let client = connect()
+        .await?;
+
+    let start_time = Local::now() - ago;
+
+    let rows = client
+        .query(
+            "SELECT id, \"timestamp\", CAST(hba1c_mmol_per_mol AS character varying(128)) hba1c_mmol_per_mol FROM beepee.long_term_blood_sugar_measurements WHERE \"timestamp\" >= $1 ORDER BY \"timestamp\"",
+            &[&start_time],
+        )
+        .await?;
+    let mut ret = Vec::new();
+    for row in rows {
+        let hba1c_mmol_per_mol_string: String = row.get(2);
+        let hba1c_mmol_per_mol: Rational32 = r32_from_decimal(&hba1c_mmol_per_mol_string)
+            .expect("parsing temperature failed");
+        ret.push(LongTermBloodSugarMeasurement::new(
+            row.get(0),
+            row.get(1),
+            hba1c_mmol_per_mol,
         ));
     }
 

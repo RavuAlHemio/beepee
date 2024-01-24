@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "list_macros.html" as list_macros %}
+
+{% block title %}Long-Term Blood Sugar{% endblock %}
+
+{% block content %}
+
+    <h1>Long-Term Blood Sugar</h1>
+
+    {% if token.write %}
+    <form class="input-form" method="post">
+        <div><input type="number" name="hba1c_value" class="hba1c_value" placeholder="HBA1c" min="0.0" step="0.1" required="required" /></div>
+        <div><select name="hba1c_unit_key">
+            <option value="mmol-per-mol" selected="selected">mmol/mol</option>
+            <option value="dcct-percent">% (DCCT)</option>
+        </select></div>
+        <div><button type="submit">store</button></div>
+    </form>
+    {% endif %}
+
+    <table class="last-measurements">
+        <thead>
+            <tr>
+                <th class="timestamp">timestamp</th>
+                <th class="hba1c mmol-per-mol">HBA1c (mmol/mol)</th>
+                <th class="hba1c dcct-percent">HBA1c (% DCCT)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for measurement in measurements %}
+                <tr>
+                    <td class="timestamp">{{ measurement.timestamp }}</td>
+                    <td class="hba1c mmol-per-mol">{{ measurement.hba1c_mmol_per_mol|ratio2float(0) }}</td>
+                    <td class="hba1c dcct-percent">{{ measurement.hba1c_dcct_percent()|ratio2float_owned(1) }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if let Some(stats) = statistics %}
+        <table class="min-max">
+            <tr class="header">
+                <th class="metric">metric</th>
+                <th class="hba1c mmol-per-mol">HBA1c (mmol/mol)</th>
+                <th class="hba1c dcct-percent">HBA1c (% DCCT)</th>
+            </tr>
+            <tr class="maximum">
+                <td class="metric">maximum</td>
+                {% call list_macros::output_long_term_sugar_stats_cols(stats.maximum) %}
+            </tr>
+            <tr class="quasi-quartile-3">
+                <td class="metric">quasi-3rd quartile</td>
+                {% call list_macros::output_long_term_sugar_stats_cols(stats.quasi_q3) %}
+            </tr>
+            <tr class="average">
+                <td class="metric">average</td>
+                {% call list_macros::output_long_term_sugar_stats_cols(stats.average) %}
+            </tr>
+            <tr class="quasi-median">
+                <td class="metric">quasi-median</td>
+                {% call list_macros::output_long_term_sugar_stats_cols(stats.quasi_q2) %}
+            </tr>
+            <tr class="quasi-quartile-1">
+                <td class="metric">quasi-1st quartile</td>
+                {% call list_macros::output_long_term_sugar_stats_cols(stats.quasi_q1) %}
+            </tr>
+            <tr class="minimum">
+                <td class="metric">minimum</td>
+                {% call list_macros::output_long_term_sugar_stats_cols(stats.minimum) %}
+            </tr>
+        </table>
+    {% endif %}
+
+    {% call list_macros::output_links(current_page="long-term-sugar") %}
+
+{% endblock %}

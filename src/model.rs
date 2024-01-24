@@ -413,6 +413,94 @@ impl BloodSugarMeasurement {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LongTermBloodSugarMeasurement {
+    pub id: i64,
+    #[serde(with = "crate::ser_de::serde_datetime_local")] pub timestamp: DateTime<Local>,
+    #[serde(with = "crate::ser_de::serde_rat32")] pub hba1c_mmol_per_mol: Rational32,
+}
+impl LongTermBloodSugarMeasurement {
+    pub fn new(
+        id: i64,
+        timestamp: DateTime<Local>,
+        hba1c_mmol_per_mol: Rational32,
+    ) -> Self {
+        Self {
+            id,
+            timestamp,
+            hba1c_mmol_per_mol,
+        }
+    }
+
+    pub fn new_dcct_percent(
+        id: i64,
+        timestamp: DateTime<Local>,
+        hba1c_dcct_percent: Rational32,
+    ) -> Self {
+        let rat_2_14 = Rational32::new(214, 100);
+        let rat_10_929 = Rational32::new(10_939, 1_000);
+        let hba1c_mmol_per_mol = (hba1c_dcct_percent - rat_2_14) * rat_10_929;
+
+        Self::new(
+            id,
+            timestamp,
+            hba1c_mmol_per_mol,
+        )
+    }
+
+    pub fn hba1c_dcct_percent(&self) -> Rational32 {
+        let rat_2_14 = Rational32::new(214, 100);
+        let rat_10_929 = Rational32::new(10_939, 1_000);
+
+        (self.hba1c_mmol_per_mol / rat_10_929) + rat_2_14
+    }
+
+    pub fn values_max(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.max(other.timestamp),
+            self.hba1c_mmol_per_mol.max(other.hba1c_mmol_per_mol),
+        )
+    }
+
+    pub fn values_min(&self, other: &Self) -> Self {
+        Self::new(
+            -1,
+            self.timestamp.min(other.timestamp),
+            self.hba1c_mmol_per_mol.min(other.hba1c_mmol_per_mol),
+        )
+    }
+
+    pub fn average(measurements: &[Self]) -> Self {
+        assert_ne!(measurements.len(), 0);
+        let len_i32: i32 = measurements.len().try_into().unwrap();
+        let len_r32: Rational32 = len_i32.into();
+
+        let sugar_mmol_per_l_sum: Rational32 = measurements.iter().map(|m| m.hba1c_mmol_per_mol).sum();
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            sugar_mmol_per_l_sum / len_r32,
+        )
+    }
+
+    pub fn quasi_n_tile(measurements: &[Self], n_num: usize, n_den: usize) -> Self {
+        assert_ne!(measurements.len(), 0);
+
+        let mut sugars_mmol_per_l: Vec<Rational32> = measurements.iter().map(|m| m.hba1c_mmol_per_mol).collect();
+        sugars_mmol_per_l.sort_unstable();
+
+        let index = quasi_n_tile_index(measurements.len(), n_num, n_den);
+
+        Self::new(
+            -1,
+            measurements[0].timestamp,
+            sugars_mmol_per_l[index],
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct MeasurementStatistics<T> {
     pub maximum: T,
     pub quasi_q3: T,

@@ -37,14 +37,16 @@ use url::Url;
 
 use crate::config::{AuthToken, CONFIG, CONFIG_PATH, load_config};
 use crate::database::{
-    add_blood_pressure_measurement, add_blood_sugar_measurement, add_mass_measurement,
-    add_temperature_measurement, get_recent_blood_pressure_measurements,
-    get_recent_blood_sugar_measurements, get_recent_mass_measurements,
+    add_blood_pressure_measurement, add_blood_sugar_measurement,
+    add_long_term_blood_sugar_measurement, add_mass_measurement, add_temperature_measurement,
+    get_recent_blood_pressure_measurements, get_recent_blood_sugar_measurements,
+    get_recent_long_term_blood_sugar_measurements, get_recent_mass_measurements,
     get_recent_temperature_measurements, get_temperature_locations,
 };
 use crate::model::{
     DailyBloodPressureMeasurements, BloodPressureMeasurement, BloodSugarMeasurement,
-    BodyMassMeasurement, BodyTemperatureLocation, BodyTemperatureMeasurement, MeasurementStatistics,
+    BodyMassMeasurement, BodyTemperatureLocation, BodyTemperatureMeasurement,
+    LongTermBloodSugarMeasurement, MeasurementStatistics,
 };
 use crate::numerism::{ParseRationalError, r32_from_decimal};
 
@@ -204,6 +206,14 @@ struct SugarListTemplate {
     token: AuthToken,
     measurements: Vec<BloodSugarMeasurement>,
     statistics: Option<MeasurementStatistics<BloodSugarMeasurement>>,
+}
+
+#[derive(Template)]
+#[template(path = "long_term_sugar_list.html")]
+struct LongTermSugarListTemplate {
+    token: AuthToken,
+    measurements: Vec<LongTermBloodSugarMeasurement>,
+    statistics: Option<MeasurementStatistics<LongTermBloodSugarMeasurement>>,
 }
 
 
@@ -659,6 +669,63 @@ async fn get_sugar(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallibl
     ).await
 }
 
+async fn get_long_term_sugar(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
+    let mut recent_measurements = match get_recent_long_term_blood_sugar_measurements(Duration::days(3*365)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+    recent_measurements.sort_by_key(|m| m.timestamp);
+    recent_measurements.reverse();
+
+    let mut max_measurement: Option<LongTermBloodSugarMeasurement> = None;
+    let mut min_measurement: Option<LongTermBloodSugarMeasurement> = None;
+    for measurement in &recent_measurements {
+        if let Some(mm) = &mut max_measurement {
+            *mm = mm.values_max(&measurement);
+        } else {
+            max_measurement = Some(measurement.clone());
+        }
+
+        if let Some(mm) = &mut min_measurement {
+            *mm = mm.values_min(&measurement);
+        } else {
+            min_measurement = Some(measurement.clone());
+        }
+    }
+
+    let statistics = if recent_measurements.len() > 0 {
+        let average = LongTermBloodSugarMeasurement::average(&recent_measurements);
+        let quasi_q1 = LongTermBloodSugarMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
+        let quasi_q2 = LongTermBloodSugarMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
+        let quasi_q3 = LongTermBloodSugarMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
+
+        Some(MeasurementStatistics {
+            minimum: min_measurement.unwrap(),
+            maximum: max_measurement.unwrap(),
+            average,
+            quasi_q1,
+            quasi_q3,
+            quasi_q2,
+        })
+    } else {
+        None
+    };
+
+    let template = LongTermSugarListTemplate {
+        token: token.clone(),
+        measurements: recent_measurements,
+        statistics,
+    };
+    respond_template(
+        &template,
+        200,
+        &HashMap::new(),
+    ).await
+}
+
 async fn get_api_bp() -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_blood_pressure_measurements(Duration::days(3*31)).await {
         Ok(rm) => rm,
@@ -763,6 +830,40 @@ async fn get_api_temperature() -> Result<Response<Full<Bytes>>, Infallible> {
 
 async fn get_api_sugar() -> Result<Response<Full<Bytes>>, Infallible> {
     let mut recent_measurements = match get_recent_blood_sugar_measurements(Duration::days(3*31)).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error obtaining recent measurements: {}", e);
+            return respond_500();
+        },
+    };
+
+    recent_measurements.sort_by_key(|m| m.timestamp);
+
+    // make it a JSON
+    let recent_json = match serde_json::to_string(&recent_measurements) {
+        Ok(rj) => rj,
+        Err(e) => {
+            error!("error serializing recent measurements to JSON: {}", e);
+            return respond_500();
+        },
+    };
+
+    // spit it out
+    let response_res = Response::builder()
+        .status(200)
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(recent_json)));
+    match response_res {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            error!("failed to create response: {}", e);
+            return respond_500();
+        },
+    }
+}
+
+async fn get_api_long_term_sugar() -> Result<Response<Full<Bytes>>, Infallible> {
+    let mut recent_measurements = match get_recent_long_term_blood_sugar_measurements(Duration::days(3*365)).await {
         Ok(rm) => rm,
         Err(e) => {
             error!("error obtaining recent measurements: {}", e);
@@ -984,6 +1085,34 @@ async fn get_sugar_measurement_from_form(req_kv: &HashMap<String, String>) -> Re
     Ok(measurement)
 }
 
+async fn get_long_term_sugar_measurement_from_form(req_kv: &HashMap<String, String>) -> Result<LongTermBloodSugarMeasurement, ClientError> {
+    let unit_key = match req_kv.get("hba1c_unit_key") {
+        Some(uk) => uk,
+        None => return Err(ClientError::MissingValue("hba1c_unit_key".to_owned())),
+    };
+    let hba1c_value: Rational32 = get_req_form_r32_gt0(&req_kv, "hba1c_value")?;
+    let local_now = Local::now();
+    if unit_key == "mmol-per-mol" {
+        Ok(LongTermBloodSugarMeasurement::new(
+            -1,
+            local_now,
+            hba1c_value,
+        ))
+    } else if unit_key == "dcct-percent" {
+        Ok(LongTermBloodSugarMeasurement::new_dcct_percent(
+            -1,
+            local_now,
+            hba1c_value,
+        ))
+    } else {
+        Err(ClientError::ValueIsInvalidOption(
+            "hba1c_unit_key".to_owned(),
+            unit_key.clone(),
+            vec!["mmol-per-mol".to_owned(), "dcct-percent".to_owned()],
+        ))
+    }
+}
+
 async fn post_index(req: Request<Incoming>, token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
     if !token.write {
         return respond_403_ro().await;
@@ -1124,6 +1253,41 @@ async fn post_sugar(req: Request<Incoming>, token: &AuthToken) -> Result<Respons
     redirect_to_self(req_parts).await
 }
 
+async fn post_long_term_sugar(req: Request<Incoming>, token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible> {
+    if !token.write {
+        return respond_403_ro().await;
+    }
+
+    let (req_parts, req_body) = req.into_parts();
+    let req_body_bytes = match req_body.collect().await {
+        Ok(rbc) => rbc.to_bytes().to_vec(),
+        Err(e) => {
+            error!("error reading request bytes: {}", e);
+            return respond_500();
+        },
+    };
+    let req_kv: HashMap<String, String> = form_urlencoded::parse(&req_body_bytes)
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+
+    let new_measurement = match get_long_term_sugar_measurement_from_form(&req_kv).await {
+        Ok(nm) => nm,
+        Err(e) => {
+            return respond_400(e).await;
+        },
+    };
+
+    match add_long_term_blood_sugar_measurement(&new_measurement).await {
+        Ok(rm) => rm,
+        Err(e) => {
+            error!("error adding measurement: {}", e);
+            return respond_500();
+        },
+    };
+
+    redirect_to_self(req_parts).await
+}
+
 async fn respond_static_file(file_name: &str) -> Result<Response<Full<Bytes>>, Infallible> {
     let mime_type = if file_name.ends_with(".css") {
         "text/css"
@@ -1247,6 +1411,14 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>,
         } else {
             respond_405(&[Method::GET, Method::POST]).await
         }
+    } else if req.uri().path() == "/long-term-sugar" {
+        if req.method() == Method::GET {
+            get_long_term_sugar(&token).await
+        } else if req.method() == Method::POST {
+            post_long_term_sugar(req, &token).await
+        } else {
+            respond_405(&[Method::GET, Method::POST]).await
+        }
     } else if req.uri().path() == "/api/bp" {
         if req.method() == Method::GET {
             get_api_bp().await
@@ -1268,6 +1440,12 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>,
     } else if req.uri().path() == "/api/sugar" {
         if req.method() == Method::GET {
             get_api_sugar().await
+        } else {
+            respond_405(&[Method::GET]).await
+        }
+    } else if req.uri().path() == "/api/long-term-sugar" {
+        if req.method() == Method::GET {
+            get_api_long_term_sugar().await
         } else {
             respond_405(&[Method::GET]).await
         }
