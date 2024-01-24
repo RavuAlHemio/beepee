@@ -50,12 +50,3 @@ CREATE TABLE beepee.blood_sugar_measurements
 , sugar_mmol_per_l numeric(6, 2) NOT NULL
 , CONSTRAINT blood_sugar_measurements_pkey PRIMARY KEY (id)
 );
-
-CREATE SEQUENCE beepee.long_term_blood_sugar_measurements_id_seq AS bigint START WITH 1;
-
-CREATE TABLE beepee.long_term_blood_sugar_measurements
-( id bigint NOT NULL DEFAULT nextval('beepee.long_term_blood_sugar_measurements_id_seq')
-, "timestamp" timestamp with time zone NOT NULL
-, hba1c_mmol_per_mol numeric(6, 2) NOT NULL
-, CONSTRAINT long_term_blood_sugar_measurements_pkey PRIMARY KEY (id)
-);
