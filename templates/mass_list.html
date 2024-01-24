@@ -1,5 +1,5 @@
-{% extends "base.html.tera" %}
-{% import "list_macros.tera" as list_macros %}
+{% extends "base.html" %}
+{% import "list_macros.html" as list_macros %}
 
 {% block title %}Body Mass{% endblock %}
 
@@ -27,16 +27,16 @@
         <tbody>
             {% for measurement in measurements %}
                 <tr>
-                    <td class="timestamp">{{ measurement.timestamp|escape }}</td>
-                    <td class="mass">{{ measurement.mass_kg|ratio2float(digits=2) }}</td>
-                    <td class="waist-circum">{% if measurement.waist_circum_cm is string %}{{ measurement.waist_circum_cm|ratio2float(digits=2) }}{% endif %}</td>
-                    <td class="bmi">{% if measurement.bmi is string %}{{ measurement.bmi|ratio2float(digits=2) }}{% endif %}</td>
+                    <td class="timestamp">{{ measurement.timestamp }}</td>
+                    <td class="mass">{{ measurement.mass_kg|ratio2float(2) }}</td>
+                    <td class="waist-circum">{% if let Some(wc) = measurement.waist_circum_cm %}{{ wc|ratio2float(2) }}{% endif %}</td>
+                    <td class="bmi">{% if let Some(bmi) = measurement.bmi %}{{ bmi|ratio2float(2) }}{% endif %}</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    {% if measurements %}
+    {% if let Some(stats) = statistics %}
         <table class="min-max">
             <tr class="header">
                 <th class="metric">metric</th>
@@ -46,33 +46,33 @@
             </tr>
             <tr class="maximum">
                 <td class="metric">maximum</td>
-                {{ list_macros::output_mass_minmax_cols(measurement=max_measurement) }}
+                {% call list_macros::output_mass_stats_cols(stats.maximum) %}
             </tr>
             <tr class="quasi-quartile-3">
                 <td class="metric">quasi-3rd quartile</td>
-                {{ list_macros::output_mass_minmax_cols(measurement=quasi_q3_measurement) }}
+                {% call list_macros::output_mass_stats_cols(stats.quasi_q3) %}
             </tr>
             <tr class="average">
                 <td class="metric">average</td>
-                {{ list_macros::output_mass_minmax_cols(measurement=avg_measurement) }}
+                {% call list_macros::output_mass_stats_cols(stats.average) %}
             </tr>
             <tr class="quasi-median">
                 <td class="metric">quasi-median</td>
-                {{ list_macros::output_mass_minmax_cols(measurement=quasi_q2_measurement) }}
+                {% call list_macros::output_mass_stats_cols(stats.quasi_q2) %}
             </tr>
             <tr class="quasi-quartile-1">
                 <td class="metric">quasi-1st quartile</td>
-                {{ list_macros::output_mass_minmax_cols(measurement=quasi_q1_measurement) }}
+                {% call list_macros::output_mass_stats_cols(stats.quasi_q1) %}
             </tr>
             <tr class="minimum">
                 <td class="metric">minimum</td>
-                {{ list_macros::output_mass_minmax_cols(measurement=min_measurement) }}
+                {% call list_macros::output_mass_stats_cols(stats.minimum) %}
             </tr>
         </table>
     {% endif %}
 
     <p>mass in kg, waist circumference in cm</p>
 
-    {{ list_macros::output_links(current_page="mass") }}
+    {% call list_macros::output_links("mass") %}
 
 {% endblock %}

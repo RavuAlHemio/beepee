@@ -1,9 +1,9 @@
 mod config;
 mod database;
-mod datetime;
+mod filters;
 mod model;
 mod numerism;
-mod templating;
+mod ser_de;
 
 
 use std::collections::{BTreeMap, HashMap};
@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::result::Result;
 
+use askama::Template;
 use chrono::{Duration, Local, Timelike};
 use env_logger;
 use form_urlencoded;
@@ -28,11 +29,9 @@ use hyper_util::rt::tokio::{TokioExecutor, TokioIo};
 use log::error;
 use num_rational::Rational32;
 use num_traits::Zero;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use regex::Regex;
-use tera::{Context, Tera};
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
 use toml;
 use url::Url;
 
@@ -45,14 +44,12 @@ use crate::database::{
 };
 use crate::model::{
     DailyBloodPressureMeasurements, BloodPressureMeasurement, BloodSugarMeasurement,
-    BodyMassMeasurement, BodyTemperatureMeasurement,
+    BodyMassMeasurement, BodyTemperatureLocation, BodyTemperatureMeasurement, MeasurementStatistics,
 };
 use crate::numerism::{ParseRationalError, r32_from_decimal};
-use crate::templating::RatioToFloat;
 
 
 static ABSOLUTE_ZERO_CELSIUS: Lazy<Rational32> = Lazy::new(|| Rational32::new(-27315, 100));
-static TERA: OnceCell<RwLock<Tera>> = OnceCell::new();
 static STATIC_PATH_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^/static/([a-z0-9-._]+)$").unwrap());
 
 
@@ -73,7 +70,6 @@ pub(crate) enum ServerError {
     ReadingConfigFile(std::io::Error),
     ParsingConfigFile(toml::de::Error),
     ParsingListenAddress(AddrParseError),
-    TemplatingSetup(tera::Error),
 }
 impl fmt::Display for ServerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -86,8 +82,6 @@ impl fmt::Display for ServerError {
                 => write!(f, "error parsing config file: {}", e),
             ServerError::ParsingListenAddress(e)
                 => write!(f, "error parsing listen address: {}", e),
-            ServerError::TemplatingSetup(e)
-                => write!(f, "error setting up templating: {}", e),
         }
     }
 }
@@ -132,25 +126,99 @@ impl Error for ClientError {
 }
 
 
-async fn render_template(template_name: &str, context: &Context) -> Result<Full<Bytes>, tera::Error> {
-    let template_string = {
-        TERA.get()
-            .expect("template engine is set")
-            .read()
-            .await
-            .render(template_name, context)?
-    };
-    let body = Full::new(Bytes::from(template_string));
+#[derive(Template)]
+#[template(path = "400.html")]
+struct Error400Template {
+    error: ClientError,
+}
+
+#[derive(Template)]
+#[template(path = "403.html")]
+struct Error403Template;
+
+#[derive(Template)]
+#[template(path = "403_ro.html")]
+struct Error403ReadOnlyTemplate;
+
+#[derive(Template)]
+#[template(path = "404.html")]
+struct Error404Template;
+
+#[derive(Template)]
+#[template(path = "405.html")]
+struct Error405Template {
+    allowed_methods: Vec<String>,
+}
+
+#[derive(Template)]
+#[template(path = "redirect.html")]
+struct RedirectTemplate {
+    url: String,
+}
+
+#[derive(Template)]
+#[template(path = "list.html")]
+struct ListTemplate {
+    token: AuthToken,
+    measurements: Vec<BloodPressureMeasurement>,
+    days_and_measurements: Vec<DailyBloodPressureMeasurements>,
+    statistics: Option<MeasurementStatistics<BloodPressureMeasurement>>,
+}
+impl ListTemplate {
+    fn measurements_with_spo2(&self) -> impl Iterator<Item = &BloodPressureMeasurement> {
+        self.measurements
+            .iter()
+            .filter(|m| m.spo2_percent.is_some())
+    }
+}
+
+#[derive(Template)]
+#[template(path = "mass_list.html")]
+struct MassListTemplate {
+    token: AuthToken,
+    measurements: Vec<BodyMassMeasurement>,
+    statistics: Option<MeasurementStatistics<BodyMassMeasurement>>,
+}
+
+#[derive(Template)]
+#[template(path = "temperature_list.html")]
+struct TemperatureListTemplate {
+    token: AuthToken,
+    measurements: Vec<BodyTemperatureMeasurement>,
+    temperature_locations: Vec<BodyTemperatureLocation>,
+    default_temperature_location_id: i64,
+    statistics: Option<MeasurementStatistics<BodyTemperatureMeasurement>>,
+}
+impl TemperatureListTemplate {
+    fn location_id_to_name(&self) -> HashMap<i64, &String> {
+        self.temperature_locations
+            .iter()
+            .map(|btl| (btl.id, &btl.name))
+            .collect()
+    }
+}
+
+#[derive(Template)]
+#[template(path = "sugar_list.html")]
+struct SugarListTemplate {
+    token: AuthToken,
+    measurements: Vec<BloodSugarMeasurement>,
+    statistics: Option<MeasurementStatistics<BloodSugarMeasurement>>,
+}
+
+
+async fn render_template<T: Template>(template: &T) -> Result<Full<Bytes>, askama::Error> {
+    let rendered = template.render()?;
+    let body = Full::new(Bytes::from(rendered));
     Ok(body)
 }
 
-async fn respond_template(
-    template_name: &str,
-    context: &Context,
+async fn respond_template<T: Template>(
+    template: &T,
     status: u16,
     headers: &HashMap<String, String>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
-    let body = match render_template(template_name, context).await {
+    let body = match render_template(template).await {
         Ok(b) => b,
         Err(e) => {
             error!("failed to render template: {:?}", e);
@@ -199,45 +267,44 @@ fn respond_500() -> Result<Response<Full<Bytes>>, Infallible> {
     Ok(response)
 }
 
-async fn respond_400(err: ClientError) -> Result<Response<Full<Bytes>>, Infallible> {
-    let mut context = Context::new();
-    context.insert("error", &err.to_string());
-
+async fn respond_400(error: ClientError) -> Result<Response<Full<Bytes>>, Infallible> {
+    let template = Error400Template {
+        error,
+    };
     respond_template(
-        "400.html.tera",
-        &context,
+        &template,
         400,
         &HashMap::new(),
     ).await
 }
 
 async fn respond_403() -> Result<Response<Full<Bytes>>, Infallible> {
+    let template = Error403Template;
     respond_template(
-        "403.html.tera",
-        &Context::new(),
+        &template,
         403,
         &HashMap::new(),
     ).await
 }
 
 async fn respond_403_ro() -> Result<Response<Full<Bytes>>, Infallible> {
+    let template = Error403ReadOnlyTemplate;
     let mut headers = HashMap::new();
     headers.insert(
         "Forbidden-Reason".to_owned(),
         "token-read-only".to_owned(),
     );
     respond_template(
-        "403_ro.html.tera",
-        &Context::new(),
+        &template,
         403,
         &headers,
     ).await
 }
 
 async fn respond_404() -> Result<Response<Full<Bytes>>, Infallible> {
+    let template = Error404Template;
     respond_template(
-        "404.html.tera",
-        &Context::new(),
+        &template,
         404,
         &HashMap::new(),
     ).await
@@ -249,15 +316,14 @@ async fn respond_405(allowed_methods: &[Method]) -> Result<Response<Full<Bytes>>
         .collect();
     let joined_methods = methods.join(", ");
 
-    let mut context = Context::new();
-    context.insert("allowed_methods", &methods);
-
+    let template = Error405Template {
+        allowed_methods: methods,
+    };
     let mut headers = HashMap::new();
     headers.insert(String::from("Allow"), joined_methods);
 
     respond_template(
-        "405.html.tera",
-        &context,
+        &template,
         405,
         &headers,
     ).await
@@ -289,15 +355,14 @@ async fn redirect_to_self(parts: Parts) -> Result<Response<Full<Bytes>>, Infalli
     };
     let page_uri_string = page_uri.to_string();
 
-    let mut context = Context::new();
-    context.insert("url", &page_uri_string);
-
+    let template = RedirectTemplate {
+        url: page_uri_string.clone(),
+    };
     let mut headers = HashMap::new();
     headers.insert(String::from("Location"), page_uri_string);
 
     respond_template(
-        "redirect.html.tera",
-        &context,
+        &template,
         302,
         &headers,
     ).await
@@ -312,11 +377,6 @@ async fn get_index(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallibl
         },
     };
     recent_measurements.sort_by_key(|m| m.timestamp);
-
-    let measurements_with_spo2: Vec<BloodPressureMeasurement> = recent_measurements.iter()
-        .filter(|m| m.spo2_percent.is_some())
-        .map(|m| m.clone())
-        .collect();
 
     // group measurements by day
     let hours = {
@@ -378,30 +438,34 @@ async fn get_index(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallibl
         .map(|v| v.clone())
         .collect();
 
-    let mut context = Context::new();
-    context.insert("token", &token);
-    context.insert("measurements", &recent_measurements);
-    context.insert("measurements_with_spo2", &measurements_with_spo2);
-    context.insert("days_and_measurements", &days_and_measurements);
-
-    if days_and_measurements.len() > 0 {
+    let statistics = if recent_measurements.len() > 0 {
         // calculate percentiles
         let average = BloodPressureMeasurement::average(&recent_measurements);
         let quasi_q1 = BloodPressureMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
         let quasi_q2 = BloodPressureMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
         let quasi_q3 = BloodPressureMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
 
-        context.insert("max_measurement", &max_measurement);
-        context.insert("quasi_q3_measurement", &quasi_q3);
-        context.insert("avg_measurement", &average);
-        context.insert("quasi_q2_measurement", &quasi_q2);
-        context.insert("quasi_q1_measurement", &quasi_q1);
-        context.insert("min_measurement", &min_measurement);
-    }
+        Some(MeasurementStatistics {
+            maximum: max_measurement.unwrap(),
+            minimum: min_measurement.unwrap(),
+            average,
+            quasi_q1,
+            quasi_q2,
+            quasi_q3,
+        })
+    } else {
+        None
+    };
+
+    let template = ListTemplate {
+        token: token.clone(),
+        measurements: recent_measurements,
+        days_and_measurements,
+        statistics,
+    };
 
     respond_template(
-        "list.html.tera",
-        &context,
+        &template,
         200,
         &HashMap::new(),
     ).await
@@ -434,28 +498,31 @@ async fn get_mass(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallible
         }
     }
 
-    let mut context = Context::new();
-    context.insert("token", &token);
-    context.insert("measurements", &recent_measurements);
-
-    if recent_measurements.len() > 0 {
-        // calculate percentiles
+    let statistics = if recent_measurements.len() > 0 {
         let average = BodyMassMeasurement::average(&recent_measurements);
         let quasi_q1 = BodyMassMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
         let quasi_q2 = BodyMassMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
         let quasi_q3 = BodyMassMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
 
-        context.insert("max_measurement", &max_measurement);
-        context.insert("quasi_q3_measurement", &quasi_q3);
-        context.insert("avg_measurement", &average);
-        context.insert("quasi_q2_measurement", &quasi_q2);
-        context.insert("quasi_q1_measurement", &quasi_q1);
-        context.insert("min_measurement", &min_measurement);
-    }
+        Some(MeasurementStatistics {
+            minimum: min_measurement.unwrap(),
+            maximum: max_measurement.unwrap(),
+            average,
+            quasi_q1,
+            quasi_q3,
+            quasi_q2,
+        })
+    } else {
+        None
+    };
 
+    let template = MassListTemplate {
+        token: token.clone(),
+        measurements: recent_measurements,
+        statistics,
+    };
     respond_template(
-        "mass_list.html.tera",
-        &context,
+        &template,
         200,
         &HashMap::new(),
     ).await
@@ -488,48 +555,48 @@ async fn get_temperature(token: &AuthToken) -> Result<Response<Full<Bytes>>, Inf
         }
     }
 
-    let locations = match get_temperature_locations().await {
+    let temperature_locations = match get_temperature_locations().await {
         Ok(l) => l,
         Err(e) => {
             error!("error obtaining temperature locations: {}", e);
             return respond_500();
         }
     };
-    let location_id_to_name: HashMap<i64, String> = locations
-        .iter()
-        .map(|loc| (loc.id, loc.name.clone()))
-        .collect();
 
-    let mut context = Context::new();
-    context.insert("token", &token);
-    context.insert("measurements", &recent_measurements);
-    context.insert("temperature_locations", &locations);
-    context.insert("temperature_location_id_to_name", &location_id_to_name);
-    {
-        let config = CONFIG
-            .get().unwrap()
-            .read().await;
-        context.insert("default_temperature_location_id", &config.default_temperature_location_id);
-    }
-
-    if recent_measurements.len() > 0 {
-        // calculate percentiles
+    let statistics = if recent_measurements.len() > 0 {
         let average = BodyTemperatureMeasurement::average(&recent_measurements);
         let quasi_q1 = BodyTemperatureMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
         let quasi_q2 = BodyTemperatureMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
         let quasi_q3 = BodyTemperatureMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
 
-        context.insert("max_measurement", &max_measurement);
-        context.insert("quasi_q3_measurement", &quasi_q3);
-        context.insert("avg_measurement", &average);
-        context.insert("quasi_q2_measurement", &quasi_q2);
-        context.insert("quasi_q1_measurement", &quasi_q1);
-        context.insert("min_measurement", &min_measurement);
-    }
+        Some(MeasurementStatistics {
+            minimum: min_measurement.unwrap(),
+            maximum: max_measurement.unwrap(),
+            average,
+            quasi_q1,
+            quasi_q3,
+            quasi_q2,
+        })
+    } else {
+        None
+    };
 
+    let default_temperature_location_id = {
+        let config = CONFIG
+            .get().unwrap()
+            .read().await;
+        config.default_temperature_location_id
+    };
+
+    let template = TemperatureListTemplate {
+        token: token.clone(),
+        measurements: recent_measurements,
+        temperature_locations,
+        default_temperature_location_id,
+        statistics,
+    };
     respond_template(
-        "temperature_list.html.tera",
-        &context,
+        &template,
         200,
         &HashMap::new(),
     ).await
@@ -562,28 +629,31 @@ async fn get_sugar(token: &AuthToken) -> Result<Response<Full<Bytes>>, Infallibl
         }
     }
 
-    let mut context = Context::new();
-    context.insert("token", &token);
-    context.insert("measurements", &recent_measurements);
-
-    if recent_measurements.len() > 0 {
-        // calculate percentiles
+    let statistics = if recent_measurements.len() > 0 {
         let average = BloodSugarMeasurement::average(&recent_measurements);
         let quasi_q1 = BloodSugarMeasurement::quasi_n_tile(&recent_measurements, 1, 4);
         let quasi_q2 = BloodSugarMeasurement::quasi_n_tile(&recent_measurements, 1, 2);
         let quasi_q3 = BloodSugarMeasurement::quasi_n_tile(&recent_measurements, 3, 4);
 
-        context.insert("max_measurement", &max_measurement);
-        context.insert("quasi_q3_measurement", &quasi_q3);
-        context.insert("avg_measurement", &average);
-        context.insert("quasi_q2_measurement", &quasi_q2);
-        context.insert("quasi_q1_measurement", &quasi_q1);
-        context.insert("min_measurement", &min_measurement);
-    }
+        Some(MeasurementStatistics {
+            minimum: min_measurement.unwrap(),
+            maximum: max_measurement.unwrap(),
+            average,
+            quasi_q1,
+            quasi_q3,
+            quasi_q2,
+        })
+    } else {
+        None
+    };
 
+    let template = SugarListTemplate {
+        token: token.clone(),
+        measurements: recent_measurements,
+        statistics,
+    };
     respond_template(
-        "sugar_list.html.tera",
-        &context,
+        &template,
         200,
         &HashMap::new(),
     ).await
@@ -1218,27 +1288,6 @@ async fn run() -> Result<(), ServerError> {
         .set(config_path).expect("failed to set config path");
 
     load_config().await?;
-
-    let mut tera = Tera::default();
-    tera.autoescape_on(vec![]);
-    tera.register_filter("ratio2float", RatioToFloat);
-    tera.add_raw_templates(vec![
-        ("400.html.tera", include_str!("../templates/400.html.tera")),
-        ("403.html.tera", include_str!("../templates/403.html.tera")),
-        ("403_ro.html.tera", include_str!("../templates/403_ro.html.tera")),
-        ("404.html.tera", include_str!("../templates/404.html.tera")),
-        ("405.html.tera", include_str!("../templates/405.html.tera")),
-        ("base.html.tera", include_str!("../templates/base.html.tera")),
-        ("list_macros.tera", include_str!("../templates/list_macros.tera")),
-        ("list.html.tera", include_str!("../templates/list.html.tera")),
-        ("mass_list.html.tera", include_str!("../templates/mass_list.html.tera")),
-        ("redirect.html.tera", include_str!("../templates/redirect.html.tera")),
-        ("sugar_list.html.tera", include_str!("../templates/sugar_list.html.tera")),
-        ("temperature_list.html.tera", include_str!("../templates/temperature_list.html.tera")),
-    ])
-        .map_err(|e| ServerError::TemplatingSetup(e))?;
-    TERA
-        .set(RwLock::new(tera)).expect("failed to set templating engine");
 
     let addr: SocketAddr = {
         CONFIG

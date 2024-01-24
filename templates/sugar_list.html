@@ -1,5 +1,5 @@
-{% extends "base.html.tera" %}
-{% import "list_macros.tera" as list_macros %}
+{% extends "base.html" %}
+{% import "list_macros.html" as list_macros %}
 
 {% block title %}Blood Sugar{% endblock %}
 
@@ -29,15 +29,15 @@
         <tbody>
             {% for measurement in measurements %}
                 <tr>
-                    <td class="timestamp">{{ measurement.timestamp|escape }}</td>
-                    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float(digits=1) }}</td>
-                    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl|ratio2float(digits=0) }}</td>
+                    <td class="timestamp">{{ measurement.timestamp }}</td>
+                    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float(1) }}</td>
+                    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl()|ratio2float_owned(0) }}</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    {% if measurements %}
+    {% if let Some(stats) = statistics %}
         <table class="min-max">
             <tr class="header">
                 <th class="metric">metric</th>
@@ -46,31 +46,31 @@
             </tr>
             <tr class="maximum">
                 <td class="metric">maximum</td>
-                {{ list_macros::output_sugar_minmax_cols(measurement=max_measurement) }}
+                {% call list_macros::output_sugar_stats_cols(stats.maximum) %}
             </tr>
             <tr class="quasi-quartile-3">
                 <td class="metric">quasi-3rd quartile</td>
-                {{ list_macros::output_sugar_minmax_cols(measurement=quasi_q3_measurement) }}
+                {% call list_macros::output_sugar_stats_cols(stats.quasi_q3) %}
             </tr>
             <tr class="average">
                 <td class="metric">average</td>
-                {{ list_macros::output_sugar_minmax_cols(measurement=avg_measurement) }}
+                {% call list_macros::output_sugar_stats_cols(stats.average) %}
             </tr>
             <tr class="quasi-median">
                 <td class="metric">quasi-median</td>
-                {{ list_macros::output_sugar_minmax_cols(measurement=quasi_q2_measurement) }}
+                {% call list_macros::output_sugar_stats_cols(stats.quasi_q2) %}
             </tr>
             <tr class="quasi-quartile-1">
                 <td class="metric">quasi-1st quartile</td>
-                {{ list_macros::output_sugar_minmax_cols(measurement=quasi_q1_measurement) }}
+                {% call list_macros::output_sugar_stats_cols(stats.quasi_q1) %}
             </tr>
             <tr class="minimum">
                 <td class="metric">minimum</td>
-                {{ list_macros::output_sugar_minmax_cols(measurement=min_measurement) }}
+                {% call list_macros::output_sugar_stats_cols(stats.minimum) %}
             </tr>
         </table>
     {% endif %}
 
-    {{ list_macros::output_links(current_page="sugar") }}
+    {% call list_macros::output_links(current_page="sugar") %}
 
 {% endblock %}

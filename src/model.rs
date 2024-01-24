@@ -3,17 +3,15 @@ use std::convert::TryInto;
 use chrono::{DateTime, Local};
 use num_rational::Rational32;
 use num_traits::Zero;
-use serde::{Serialize, Serializer};
-use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize};
 
-use crate::datetime::{milliseconds_since_epoch, milliseconds_since_midnight};
 use crate::numerism::{optional_max, optional_min, quasi_n_tile_index};
 
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct BloodPressureMeasurement {
     pub id: i64,
-    pub timestamp: DateTime<Local>,
+    #[serde(with = "crate::ser_de::serde_datetime_local")] pub timestamp: DateTime<Local>,
     pub systolic_mmhg: i32,
     pub diastolic_mmhg: i32,
     pub pulse_bpm: i32,
@@ -115,24 +113,9 @@ impl BloodPressureMeasurement {
         )
     }
 }
-impl Serialize for BloodPressureMeasurement {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct(
-            stringify!(BloodPressureMeasurement),
-            10,
-        )?;
-        state.serialize_field("id", &self.id)?;
-        serialize_timestamp(&self.timestamp, &mut state)?;
-        state.serialize_field("systolic_mmhg", &self.systolic_mmhg)?;
-        state.serialize_field("diastolic_mmhg", &self.diastolic_mmhg)?;
-        state.serialize_field("pulse_bpm", &self.pulse_bpm)?;
-        state.serialize_field("spo2_percent", &self.spo2_percent)?;
-        state.end()
-    }
-}
 
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct DailyBloodPressureMeasurements {
     pub date_string: String,
     pub morning: Option<BloodPressureMeasurement>,
@@ -163,13 +146,13 @@ impl DailyBloodPressureMeasurements {
 }
 
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct BodyMassMeasurement {
     pub id: i64,
-    pub timestamp: DateTime<Local>,
-    pub mass_kg: Rational32,
-    pub waist_circum_cm: Option<Rational32>,
-    pub bmi: Option<Rational32>,
+    #[serde(with = "crate::ser_de::serde_datetime_local")] pub timestamp: DateTime<Local>,
+    #[serde(with = "crate::ser_de::serde_rat32")] pub mass_kg: Rational32,
+    #[serde(with = "crate::ser_de::serde_rat32_opt")] pub waist_circum_cm: Option<Rational32>,
+    #[serde(with = "crate::ser_de::serde_rat32_opt")] pub bmi: Option<Rational32>,
 }
 impl BodyMassMeasurement {
     pub fn new(
@@ -257,22 +240,8 @@ impl BodyMassMeasurement {
         )
     }
 }
-impl Serialize for BodyMassMeasurement {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct(
-            stringify!(BodyMassMeasurement),
-            9,
-        )?;
-        state.serialize_field("id", &self.id)?;
-        serialize_timestamp(&self.timestamp, &mut state)?;
-        state.serialize_field("mass_kg", &self.mass_kg.to_string())?;
-        state.serialize_field("waist_circum_cm", &self.waist_circum_cm.map(|c| c.to_string()))?;
-        state.serialize_field("bmi", &self.bmi.map(|b| b.to_string()))?;
-        state.end()
-    }
-}
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct BodyTemperatureLocation {
     pub id: i64,
     pub name: String,
@@ -289,12 +258,12 @@ impl BodyTemperatureLocation {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct BodyTemperatureMeasurement {
     pub id: i64,
-    pub timestamp: DateTime<Local>,
+    #[serde(with = "crate::ser_de::serde_datetime_local")] pub timestamp: DateTime<Local>,
     pub location_id: i64,
-    pub temperature_celsius: Rational32,
+    #[serde(with = "crate::ser_de::serde_rat32")] pub temperature_celsius: Rational32,
 }
 impl BodyTemperatureMeasurement {
     pub fn new(
@@ -360,25 +329,12 @@ impl BodyTemperatureMeasurement {
         )
     }
 }
-impl Serialize for BodyTemperatureMeasurement {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct(
-            stringify!(BodyTemperatureMeasurement),
-            8,
-        )?;
-        state.serialize_field("id", &self.id)?;
-        serialize_timestamp(&self.timestamp, &mut state)?;
-        state.serialize_field("location_id", &self.location_id.to_string())?;
-        state.serialize_field("temperature_celsius", &self.temperature_celsius.to_string())?;
-        state.end()
-    }
-}
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct BloodSugarMeasurement {
     pub id: i64,
-    pub timestamp: DateTime<Local>,
-    pub sugar_mmol_per_l: Rational32,
+    #[serde(with = "crate::ser_de::serde_datetime_local")] pub timestamp: DateTime<Local>,
+    #[serde(with = "crate::ser_de::serde_rat32")] pub sugar_mmol_per_l: Rational32,
 }
 impl BloodSugarMeasurement {
     pub fn new(
@@ -404,6 +360,10 @@ impl BloodSugarMeasurement {
             timestamp,
             sugar_mmol_per_l,
         )
+    }
+
+    pub fn sugar_mg_per_dl(&self) -> Rational32 {
+        self.sugar_mmol_per_l * 16
     }
 
     pub fn values_max(&self, other: &Self) -> Self {
@@ -451,27 +411,13 @@ impl BloodSugarMeasurement {
         )
     }
 }
-impl Serialize for BloodSugarMeasurement {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct(
-            stringify!(BloodSugarMeasurement),
-            8,
-        )?;
-        let sugar_mg_per_dl = &self.sugar_mmol_per_l * 18;
-        state.serialize_field("id", &self.id)?;
-        serialize_timestamp(&self.timestamp, &mut state)?;
-        state.serialize_field("sugar_mmol_per_l", &self.sugar_mmol_per_l.to_string())?;
-        state.serialize_field("sugar_mg_per_dl", &sugar_mg_per_dl.to_string())?;
-        state.end()
-    }
-}
 
-
-fn serialize_timestamp<S: SerializeStruct>(timestamp: &DateTime<Local>, state: &mut S) -> Result<(), S::Error> {
-    state.serialize_field("timestamp", &timestamp.format("%Y-%m-%d %H:%M:%S").to_string())?;
-    state.serialize_field("zoned_timestamp", &timestamp.format("%Y-%m-%d %H:%M:%S %z").to_string())?;
-    state.serialize_field("unix_timestamp_ms", &milliseconds_since_epoch(&timestamp))?;
-    state.serialize_field("time_of_day_ms", &milliseconds_since_midnight(&timestamp.time()))?;
-    state.serialize_field("time", &timestamp.format("%H:%M").to_string())?;
-    Ok(())
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct MeasurementStatistics<T> {
+    pub maximum: T,
+    pub quasi_q3: T,
+    pub average: T,
+    pub quasi_q2: T,
+    pub quasi_q1: T,
+    pub minimum: T,
 }

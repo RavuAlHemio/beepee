@@ -1,0 +1,70 @@
+{% macro output_reading_header(day_part) %}
+    <th class="{{ day_part }} time">time</th>
+    <th class="{{ day_part }} pressure">pressure</th>
+    <th class="{{ day_part }} pulse">pulse</th>
+    <th class="{{ day_part }} spo2">SpO&#8322;</th>
+{% endmacro %}
+
+{% macro output_reading(measurement, day_part) %}
+    {% if let Some(m) = measurement %}
+        <td class="{{ day_part }} time">{{ m.timestamp|time }}</td>
+        <td class="{{ day_part }} pressure">
+            <span class="systolic">{{ m.systolic_mmhg }}</span>/<span class="diastolic">{{ m.diastolic_mmhg }}</span>
+        </td>
+        <td class="{{ day_part }} pulse">{{ m.pulse_bpm }}</td>
+        <td class="{{ day_part }} spo2">{% if let Some(spo2) = m.spo2_percent %}{{ spo2 }}{% endif %}</td>
+    {% else %}
+        <td class="{{ day_part }} missing" colspan="4">missing</td>
+    {% endif %}
+{% endmacro %}
+
+
+{% macro output_measurement_stats_cols(measurement) %}
+    <td class="systolic">{{ measurement.systolic_mmhg }}</td>
+    <td class="diastolic">{{ measurement.diastolic_mmhg }}</td>
+    <td class="pulse">{{ measurement.pulse_bpm }}</td>
+    <td class="spo2">{% if let Some(spo2) = measurement.spo2_percent %}{{ spo2 }}{% endif %}</td>
+{% endmacro %}
+
+{% macro output_mass_stats_cols(measurement) %}
+    <td class="mass">{{ measurement.mass_kg|ratio2float(2) }}</td>
+    <td class="waist-circum">{% if let Some(wc) = measurement.waist_circum_cm %}{{ wc|ratio2float(2) }}{% endif %}</td>
+    <td class="bmi">{% if let Some(bmi) = measurement.bmi %}{{ bmi|ratio2float(2) }}{% endif %}</td>
+{% endmacro %}
+
+{% macro output_temperature_stats_cols(measurement) %}
+    <td class="temperature">{{ measurement.temperature_celsius|ratio2float(2) }}</td>
+{% endmacro %}
+
+{% macro output_sugar_stats_cols(measurement) %}
+    <td class="sugar mmol-per-l">{{ measurement.sugar_mmol_per_l|ratio2float(1) }}</td>
+    <td class="sugar mg-per-dl">{{ measurement.sugar_mg_per_dl()|ratio2float_owned(0) }}</td>
+{% endmacro %}
+
+{% macro output_links(current_page) %}
+    <p class="link-bar">
+        {% if current_page == "bp" %}
+            <strong class="current-page bp">blood pressure</strong>
+        {% else %}
+            <a class="page-link bp" href="./?token={{ token.token|urlencode }}">blood pressure</a>
+        {% endif %}
+        &middot;
+        {% if current_page == "mass" %}
+            <strong class="current-page mass">body mass</strong>
+        {% else %}
+            <a class="page-link mass" href="mass?token={{ token.token|urlencode }}">body mass</a>
+        {% endif %}
+        &middot;
+        {% if current_page == "temperature" %}
+            <strong class="current-page temperature">body temperature</strong>
+        {% else %}
+            <a class="page-link temperature" href="temperature?token={{ token.token|urlencode }}">body temperature</a>
+        {% endif %}
+        &middot;
+        {% if current_page == "sugar" %}
+            <strong class="current-page sugar">blood sugar</strong>
+        {% else %}
+            <a class="page-link sugar" href="sugar?token={{ token.token|urlencode }}">blood sugar</a>
+        {% endif %}
+    </p>
+{% endmacro %}

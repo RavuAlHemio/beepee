@@ -1,5 +1,5 @@
-{% extends "base.html.tera" %}
-{% import "list_macros.tera" as list_macros %}
+{% extends "base.html" %}
+{% import "list_macros.html" as list_macros %}
 
 {% block title %}Temperature{% endblock %}
 
@@ -13,9 +13,9 @@
         <div><select name="location">
             {% for loc in temperature_locations %}
                 {% if loc.id == default_temperature_location_id %}
-                    <option value="{{ loc.id }}" selected="selected">{{ loc.name|escape }}</option>
+                    <option value="{{ loc.id }}" selected="selected">{{ loc.name }}</option>
                 {% else %}
-                    <option value="{{ loc.id }}">{{ loc.name|escape }}</option>
+                    <option value="{{ loc.id }}">{{ loc.name }}</option>
                 {% endif %}
             {% endfor %}
         </select></div>
@@ -34,15 +34,15 @@
         <tbody>
             {% for measurement in measurements %}
                 <tr>
-                    <td class="timestamp">{{ measurement.timestamp|escape }}</td>
-                    <td class="location">{{ temperature_location_id_to_name[measurement.location_id]|escape }}</td>
-                    <td class="temperature">{{ measurement.temperature_celsius|ratio2float }}</td>
+                    <td class="timestamp">{{ measurement.timestamp }}</td>
+                    <td class="location">{% if let Some(loc_name) = self.location_id_to_name().get(measurement.location_id) %}{{ loc_name }}{% endif %}</td>
+                    <td class="temperature">{{ measurement.temperature_celsius|ratio2floatraw }}</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    {% if measurements %}
+    {% if let Some(stats) = statistics %}
         <table class="min-max">
             <tr class="header">
                 <th class="metric">metric</th>
@@ -50,33 +50,33 @@
             </tr>
             <tr class="maximum">
                 <td class="metric">maximum</td>
-                {{ list_macros::output_temperature_minmax_cols(measurement=max_measurement) }}
+                {% call list_macros::output_temperature_stats_cols(stats.maximum) %}
             </tr>
             <tr class="quasi-quartile-3">
                 <td class="metric">quasi-3rd quartile</td>
-                {{ list_macros::output_temperature_minmax_cols(measurement=quasi_q3_measurement) }}
+                {% call list_macros::output_temperature_stats_cols(stats.quasi_q3) %}
             </tr>
             <tr class="average">
                 <td class="metric">average</td>
-                {{ list_macros::output_temperature_minmax_cols(measurement=avg_measurement) }}
+                {% call list_macros::output_temperature_stats_cols(stats.average) %}
             </tr>
             <tr class="quasi-median">
                 <td class="metric">quasi-median</td>
-                {{ list_macros::output_temperature_minmax_cols(measurement=quasi_q2_measurement) }}
+                {% call list_macros::output_temperature_stats_cols(stats.quasi_q2) %}
             </tr>
             <tr class="quasi-quartile-1">
                 <td class="metric">quasi-1st quartile</td>
-                {{ list_macros::output_temperature_minmax_cols(measurement=quasi_q1_measurement) }}
+                {% call list_macros::output_temperature_stats_cols(stats.quasi_q1) %}
             </tr>
             <tr class="minimum">
                 <td class="metric">minimum</td>
-                {{ list_macros::output_temperature_minmax_cols(measurement=min_measurement) }}
+                {% call list_macros::output_temperature_stats_cols(stats.minimum) %}
             </tr>
         </table>
     {% endif %}
 
     <p>temperature in °C</p>
 
-    {{ list_macros::output_links(current_page="temperature") }}
+    {% call list_macros::output_links(current_page="temperature") %}
 
 {% endblock %}

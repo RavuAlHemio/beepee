@@ -1,5 +1,5 @@
-{% extends "base.html.tera" %}
-{% import "list_macros.tera" as list_macros %}
+{% extends "base.html" %}
+{% import "list_macros.html" as list_macros %}
 
 {% block title %}Blood Pressure{% endblock %}
 
@@ -11,50 +11,50 @@
 <script type="text/javascript">
 BeePee.tsToSystolic = [
     {% for measurement in measurements -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.systolic_mmhg }} }
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|unix_timestamp_ms }}, y: {{ measurement.systolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.tsToDiastolic = [
     {% for measurement in measurements -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.diastolic_mmhg }} }
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|unix_timestamp_ms }}, y: {{ measurement.diastolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.tsToPulse = [
     {% for measurement in measurements -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.pulse_bpm }} }
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|unix_timestamp_ms }}, y: {{ measurement.pulse_bpm }} }
     {%- endfor %}
 ];
 BeePee.tsToSpo2 = [
-    {% for measurement in measurements_with_spo2 -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.unix_timestamp_ms }}, y: {{ measurement.spo2_percent }} }
+    {% for measurement in self.measurements_with_spo2() -%}
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|unix_timestamp_ms }}, y: {{ measurement.spo2_percent.unwrap() }} }
     {%- endfor %}
 ];
 BeePee.todToSystolic = [
     {% for measurement in measurements -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.systolic_mmhg }} }
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|time_of_day_ms }}, y: {{ measurement.systolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.todToDiastolic = [
     {% for measurement in measurements -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.diastolic_mmhg }} }
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|time_of_day_ms }}, y: {{ measurement.diastolic_mmhg }} }
     {%- endfor %}
 ];
 BeePee.todToPulse = [
     {% for measurement in measurements -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.pulse_bpm }} }
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|time_of_day_ms }}, y: {{ measurement.pulse_bpm }} }
     {%- endfor %}
 ];
 BeePee.todToSpo2 = [
-    {% for measurement in measurements_with_spo2 -%}
-        {%- if not loop.first %}, {% endif -%}
-        { x: {{ measurement.time_of_day_ms }}, y: {{ measurement.spo2_percent }} }
+    {% for measurement in self.measurements_with_spo2() -%}
+        {%- if !loop.first %}, {% endif -%}
+        { x: {{ measurement.timestamp|time_of_day_ms }}, y: {{ measurement.spo2_percent.unwrap() }} }
     {%- endfor %}
 ];
 BeePee.setUp();
@@ -85,25 +85,25 @@ BeePee.setUp();
                 <th class="other-measurements" rowspan="2">others</th>
             </tr>
             <tr>
-                {{ list_macros::output_reading_header(day_part="morning") }}
-                {{ list_macros::output_reading_header(day_part="midday") }}
-                {{ list_macros::output_reading_header(day_part="evening") }}
+                {% call list_macros::output_reading_header("morning") %}
+                {% call list_macros::output_reading_header("midday") %}
+                {% call list_macros::output_reading_header("evening") %}
             </tr>
         </thead>
         <tbody>
             {% for measurements in days_and_measurements %}
                 <tr>
-                    <td class="date">{{ measurements.date_string|escape }}</td>
-                    {{ list_macros::output_reading(measurement=measurements.morning, day_part="morning") }}
-                    {{ list_macros::output_reading(measurement=measurements.midday, day_part="midday") }}
-                    {{ list_macros::output_reading(measurement=measurements.evening, day_part="evening") }}
-                    <td class="other-measurements">{{ measurements.other|length }}</td>
+                    <td class="date">{{ measurements.date_string }}</td>
+                    {% call list_macros::output_reading(measurements.morning, "morning") %}
+                    {% call list_macros::output_reading(measurements.midday, "midday") %}
+                    {% call list_macros::output_reading(measurements.evening, "evening") %}
+                    <td class="other-measurements">{{ measurements.other.len() }}</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    {% if days_and_measurements %}
+    {% if let Some(stats) = statistics %}
         <table class="min-max">
             <tr class="header">
                 <th class="metric">metric</th>
@@ -114,27 +114,27 @@ BeePee.setUp();
             </tr>
             <tr class="maximum">
                 <td class="metric">maximum</td>
-                {{ list_macros::output_measurement_minmax_cols(measurement=max_measurement) }}
+                {% call list_macros::output_measurement_stats_cols(stats.maximum) %}
             </tr>
             <tr class="quasi-quartile-3">
                 <td class="metric">quasi-3rd quartile</td>
-                {{ list_macros::output_measurement_minmax_cols(measurement=quasi_q3_measurement) }}
+                {% call list_macros::output_measurement_stats_cols(stats.quasi_q3) %}
             </tr>
             <tr class="average">
                 <td class="metric">average</td>
-                {{ list_macros::output_measurement_minmax_cols(measurement=avg_measurement) }}
+                {% call list_macros::output_measurement_stats_cols(stats.average) %}
             </tr>
             <tr class="quasi-median">
                 <td class="metric">quasi-median</td>
-                {{ list_macros::output_measurement_minmax_cols(measurement=quasi_q2_measurement) }}
+                {% call list_macros::output_measurement_stats_cols(stats.quasi_q2) %}
             </tr>
             <tr class="quasi-quartile-1">
                 <td class="metric">quasi-1st quartile</td>
-                {{ list_macros::output_measurement_minmax_cols(measurement=quasi_q1_measurement) }}
+                {% call list_macros::output_measurement_stats_cols(stats.quasi_q1) %}
             </tr>
             <tr class="minimum">
                 <td class="metric">minimum</td>
-                {{ list_macros::output_measurement_minmax_cols(measurement=min_measurement) }}
+                {% call list_macros::output_measurement_stats_cols(stats.minimum) %}
             </tr>
         </table>
     {% endif %}
@@ -149,6 +149,6 @@ BeePee.setUp();
         <canvas id="tod-chart-canvas"></canvas>
     </div>
 
-    {{ list_macros::output_links(current_page="bp") }}
+    {% call list_macros::output_links("bp") %}
 
 {% endblock %}

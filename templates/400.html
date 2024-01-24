@@ -1,4 +1,4 @@
-{% extends "base.html.tera" %}
+{% extends "base.html" %}
 
 {% block title %}Bad Request{% endblock %}
 
@@ -7,5 +7,5 @@
 
     <p>Failed to parse the request! The error is:</p>
 
-    <pre>{{ error|escape }}</pre>
+    <pre>{{ error }}</pre>
 {% endblock %}
