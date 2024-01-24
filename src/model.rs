@@ -8,6 +8,13 @@ use serde::{Deserialize, Serialize};
 use crate::numerism::{optional_max, optional_min, quasi_n_tile_index};
 
 
+pub(crate) const SUGAR_MG_PER_DL_IN_MMOL_PER_L: i32 = 18;
+pub(crate) const HBA1C_ADDITIVE_NUMER: i32 = 214;
+pub(crate) const HBA1C_ADDITIVE_DENOM: i32 = 100;
+pub(crate) const HBA1C_MULTIPLICATIVE_NUMER: i32 = 10_929;
+pub(crate) const HBA1C_MULTIPLICATIVE_DENOM: i32 = 1_000;
+
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct BloodPressureMeasurement {
     pub id: i64,
@@ -354,7 +361,7 @@ impl BloodSugarMeasurement {
         timestamp: DateTime<Local>,
         sugar_mg_per_dl: Rational32,
     ) -> Self {
-        let sugar_mmol_per_l = &sugar_mg_per_dl / 16;
+        let sugar_mmol_per_l = &sugar_mg_per_dl / SUGAR_MG_PER_DL_IN_MMOL_PER_L;
         Self::new(
             id,
             timestamp,
@@ -363,7 +370,7 @@ impl BloodSugarMeasurement {
     }
 
     pub fn sugar_mg_per_dl(&self) -> Rational32 {
-        self.sugar_mmol_per_l * 16
+        self.sugar_mmol_per_l * SUGAR_MG_PER_DL_IN_MMOL_PER_L
     }
 
     pub fn values_max(&self, other: &Self) -> Self {
@@ -436,9 +443,9 @@ impl LongTermBloodSugarMeasurement {
         timestamp: DateTime<Local>,
         hba1c_dcct_percent: Rational32,
     ) -> Self {
-        let rat_2_14 = Rational32::new(214, 100);
-        let rat_10_929 = Rational32::new(10_939, 1_000);
-        let hba1c_mmol_per_mol = (hba1c_dcct_percent - rat_2_14) * rat_10_929;
+        let additive_factor = Rational32::new(HBA1C_ADDITIVE_NUMER, HBA1C_ADDITIVE_DENOM);
+        let multiplicative_factor = Rational32::new(HBA1C_MULTIPLICATIVE_NUMER, HBA1C_MULTIPLICATIVE_DENOM);
+        let hba1c_mmol_per_mol = (hba1c_dcct_percent - additive_factor) * multiplicative_factor;
 
         Self::new(
             id,
@@ -448,10 +455,10 @@ impl LongTermBloodSugarMeasurement {
     }
 
     pub fn hba1c_dcct_percent(&self) -> Rational32 {
-        let rat_2_14 = Rational32::new(214, 100);
-        let rat_10_929 = Rational32::new(10_939, 1_000);
+        let additive_factor = Rational32::new(HBA1C_ADDITIVE_NUMER, HBA1C_ADDITIVE_DENOM);
+        let multiplicative_factor = Rational32::new(HBA1C_MULTIPLICATIVE_NUMER, HBA1C_MULTIPLICATIVE_DENOM);
 
-        (self.hba1c_mmol_per_mol / rat_10_929) + rat_2_14
+        (self.hba1c_mmol_per_mol / multiplicative_factor) + additive_factor
     }
 
     pub fn values_max(&self, other: &Self) -> Self {

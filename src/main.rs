@@ -46,7 +46,7 @@ use crate::database::{
 use crate::model::{
     DailyBloodPressureMeasurements, BloodPressureMeasurement, BloodSugarMeasurement,
     BodyMassMeasurement, BodyTemperatureLocation, BodyTemperatureMeasurement,
-    LongTermBloodSugarMeasurement, MeasurementStatistics,
+    LongTermBloodSugarMeasurement, MeasurementStatistics, SUGAR_MG_PER_DL_IN_MMOL_PER_L,
 };
 use crate::numerism::{ParseRationalError, r32_from_decimal};
 
@@ -1064,7 +1064,7 @@ async fn get_sugar_measurement_from_form(req_kv: &HashMap<String, String>) -> Re
     let factor_to_mmol_per_l = if unit_key == "mmol-per-l" {
         Rational32::new(1, 1)
     } else if unit_key == "mg-per-dl" {
-        Rational32::new(1, 18)
+        Rational32::new(1, SUGAR_MG_PER_DL_IN_MMOL_PER_L)
     } else {
         return Err(ClientError::ValueIsInvalidOption(
             "sugar_unit_key".to_owned(),
