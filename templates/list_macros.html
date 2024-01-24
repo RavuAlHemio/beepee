@@ -42,8 +42,8 @@
 {% endmacro %}
 
 {% macro output_long_term_sugar_stats_cols(measurement) %}
-    <td class="hba1c mmol-per-mol">{{ measurement.hba1c_mmol_per_mol|ratio2float(1) }}</td>
-    <td class="hba1c dcct-percent">{{ measurement.hba1c_dcct_percent()|ratio2float_owned(0) }}</td>
+    <td class="hba1c mmol-per-mol">{{ measurement.hba1c_mmol_per_mol|ratio2float(0) }}</td>
+    <td class="hba1c dcct-percent">{{ measurement.hba1c_dcct_percent()|ratio2float_owned(1) }}</td>
 {% endmacro %}
 
 {% macro output_links(current_page) %}
