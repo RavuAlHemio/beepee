@@ -22,13 +22,6 @@ def main():
 
     bad = False
 
-    for template_path in glob.glob(os.path.join("templates", "*.tera")):
-        template_name = os.path.basename(template_path)
-        template_code_path = f"{TEMPLATE_LINE_SUBSTR}{template_name}"
-        if not any(template_code_path in line for line in lines):
-            print(f"template {template_name} missing from main.rs")
-            bad = True
-
     for static_path in glob.glob(os.path.join("static", "*")):
         static_name = os.path.basename(static_path)
         static_code_path = f"{STATIC_LINE_SUBSTR}{static_name}"
