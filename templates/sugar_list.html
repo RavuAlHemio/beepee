@@ -9,7 +9,7 @@
 
     {% if token.write %}
     <form class="input-form" method="post">
-        <div><input type="number" name="sugar_value" class="sugar" placeholder="blood sugar" min="0.0" step="0.1" required="required" /></div>
+        <div><input type="number" name="sugar_value" class="sugar" placeholder="blood sugar" min="0.0" step="0.1" required="required" autofocus="autofocus" /></div>
         <div><select name="sugar_unit_key">
             <option value="mmol-per-l">mmol/l</option>
             <option value="mg-per-dl" selected="selected">mg/dl</option>

@@ -9,7 +9,7 @@
 
     {% if token.write %}
     <form class="input-form" method="post">
-        <div><input type="number" name="temperature_celsius" class="temperature" placeholder="temperature °C" min="0.0" step="0.1" required="required" /></div>
+        <div><input type="number" name="temperature_celsius" class="temperature" placeholder="temperature °C" min="0.0" step="0.1" required="required" autofocus="autofocus" /></div>
         <div><select name="location">
             {% for loc in temperature_locations %}
                 {% if loc.id == default_temperature_location_id %}

@@ -9,7 +9,7 @@
 
     {% if token.write %}
     <form class="input-form" method="post">
-        <div><input type="number" name="mass_kg" class="mass" placeholder="mass kg" min="0.0" step="0.1" required="required" /></div>
+        <div><input type="number" name="mass_kg" class="mass" placeholder="mass kg" min="0.0" step="0.1" required="required" autofocus="autofocus" /></div>
         <div><input type="number" name="waist_circum_cm" class="waist-circum" placeholder="waist circumference cm" min="0" step="1" /></div>
         <div><button type="submit">store</button></div>
     </form>

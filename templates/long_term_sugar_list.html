@@ -9,7 +9,7 @@
 
     {% if token.write %}
     <form class="input-form" method="post">
-        <div><input type="number" name="hba1c_value" class="hba1c_value" placeholder="HBA1c" min="0.0" step="0.1" required="required" /></div>
+        <div><input type="number" name="hba1c_value" class="hba1c_value" placeholder="HBA1c" min="0.0" step="0.1" required="required" autofocus="autofocus" /></div>
         <div><select name="hba1c_unit_key">
             <option value="mmol-per-mol" selected="selected">mmol/mol</option>
             <option value="dcct-percent">% (DCCT)</option>
