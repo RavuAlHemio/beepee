@@ -1,8 +1,8 @@
 use chrono::{Duration, Local};
-use log::error;
 use num_rational::Rational32;
 use tokio;
 use tokio_postgres::{self, Client, NoTls};
+use tracing::error;
 
 use crate::config::CONFIG;
 use crate::model::{

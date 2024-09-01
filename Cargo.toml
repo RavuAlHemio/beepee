@@ -6,13 +6,11 @@ edition = "2021"
 [dependencies]
 askama = { version = "0.12" }
 chrono = { version = "0.4" }
-env_logger = { version = "0.11" }
 form_urlencoded = { version = "1.2" }
 http = { version = "1.1" }
 http-body-util = { version = "0.1" }
 hyper = { version = "1.4", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "http2", "server", "server-auto", "tokio"] }
-log = { version = "0.4" }
 num-rational = { version = "0.4" }
 num-traits = { version = "0.2" }
 once_cell = { version = "1.19" }
@@ -22,4 +20,7 @@ serde_json = { version = "1.0" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
 toml = { version = "0.8" }
+tracing = { version = "0.1" }
+tracing-appender = { version = "0.2" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = { version = "2.5" }

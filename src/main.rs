@@ -18,7 +18,6 @@ use std::result::Result;
 
 use askama::Template;
 use chrono::{Duration, Local, Timelike};
-use env_logger;
 use form_urlencoded;
 use http::request::Parts;
 use http_body_util::{BodyExt, Full};
@@ -26,13 +25,13 @@ use hyper::{Method, Request, Response};
 use hyper::body::{Bytes, Incoming};
 use hyper::service::service_fn;
 use hyper_util::rt::tokio::{TokioExecutor, TokioIo};
-use log::error;
 use num_rational::Rational32;
 use num_traits::Zero;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tokio::net::TcpListener;
 use toml;
+use tracing::error;
 use url::Url;
 
 use crate::config::{AuthToken, CONFIG, CONFIG_PATH, load_config};
@@ -1455,7 +1454,12 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>,
 }
 
 async fn run() -> Result<(), ServerError> {
-    env_logger::init();
+    // set up tracing
+    let (stdout_non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(stdout_non_blocking)
+        .init();
 
     let args: Vec<OsString> = std::env::args_os().collect();
     let config_path = match args.get(1) {
