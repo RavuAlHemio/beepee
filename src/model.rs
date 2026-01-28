@@ -301,7 +301,7 @@ impl BodyTemperatureMeasurement {
             -1,
             self.timestamp.min(other.timestamp),
             self.location_id.min(other.location_id),
-            self.temperature_celsius.max(other.temperature_celsius),
+            self.temperature_celsius.min(other.temperature_celsius),
         )
     }
 
